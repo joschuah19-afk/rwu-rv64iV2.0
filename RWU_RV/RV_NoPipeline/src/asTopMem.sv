@@ -39,6 +39,11 @@ module as_top_mem (input logic                       clk_i,
   logic [daddr_width-1:0] dBusAddr_s;   // address for dmem
   //logic			  dMemRd_s;     // read enable for dmem
   //logic			  dMemWr_s;     // write enable for dmem
+  // D-Mem MBPI - CPU
+  logic [reg_width-1:0]   dBusDataRd3_s;
+  logic [reg_width-1:0]	  dBusDataWr3_s;
+  logic [daddr_width-1:0] dBusAddr3_s;
+  logic                   dMemWr3_s;
   
   // instruction bus
   logic [instr_width-1:0] iBusDataRd_s; // data out from imem = Instruction
@@ -46,6 +51,10 @@ module as_top_mem (input logic                       clk_i,
   logic [iaddr_width-1:0] iBusAddr_s;   // address for imem
   logic			  iMemWr_s;     // write enable for imem      -- not connected
   logic [instr_width-1:0] ir_s;
+  
+  logic [iaddr_width-1:0] iBusAddr3_s;
+  logic [instr_width-1:0] iBusDataRd3_s;
+  
 
   // JTAG
   logic tap_rst_s;
@@ -196,23 +205,13 @@ module as_top_mem (input logic                       clk_i,
               .sc01_shift_i(sc01_shift_s),
               .sc01_clock_i(sc01_clock_s),
 	       // instruction bus
-              .wbiBusDataRd_i(iBusDataRd_s),  // data out from I-Mem
-              .wbiBusDataWr_o(),              // not needed for I-Mem
-              .wbiBusAddr_o(iBusAddr_s),      // address for I-Mem
-              .wbiBusWe_o(),                  // not needed for I-Mem
-              .wbiBusSel_o(),                 // not needed for I-Mem
-              .wbiBusStb_o(),                 // not needed for I-Mem
-              .wbiBusAck_i(1'b1),             // not needed, constant 1 
-              .wbiBusCyc_o(),                 // not needed for I-Mem
+              .iBusAddr_o(iBusAddr3_s),
+              .iBusDataRd_i(iBusDataRd3_s),
 	       // data bus
-              .wbdBusDataRd_i(dBusDataRd_s),  // data out from D-Mem
-              .wbdBusDataWr_o(dBusDataWr_s),  // data in to D-Mem
-              .wbdBusAddr_o(dBusAddr_s),      // address for D-Mem
-              .wbdBusWe_o(wbdwe_s),           // we for D-Mem
-              .wbdBusSel_o(sel_s),            // byte-sel for D-Mem
-              .wbdBusStb_o(wbdstb1_s),        // stb for D-Mem
-              .wbdBusAck_i(wdbAckAll_s),      // ack from D-Mem
-              .wbdBusCyc_o(wbdcyc_s),         // cyc for mem
+              .dBusAddr_o(dBusAddr3_s),
+              .dBusDataWr_o(dBusDataWr3_s),
+              .dBusDataRd_i(dBusDataRd3_s),
+              .dBusWe_o(dMemWr3_s),
 	       // IRQ
               .irq_ext_i(irq_external_s)
              );
@@ -226,6 +225,25 @@ module as_top_mem (input logic                       clk_i,
   //--------------------------------------------
   // Instruction memory
   //--------------------------------------------
+  // M-BPI
+  as_master_bpi #(64, 32) mInstrBpi(
+                                   .rst_i(rst_i),
+                                   .clk_i(clk_i),
+                                   .addr_i(iBusAddr3_s),          // Address: between BPI and CPU
+                                   .dat_from_core_i('b0),         // not connected
+                                   .dat_to_core_o(iBusDataRd3_s), // Data (Instruction): between BPI and CPU
+                                   .wr_i(1'b0),                   // not connected
+                                   .wb_m_addr_o(iBusAddr_s),      // Address: between BPI and I-Mem
+                                   .wb_m_dat_i(iBusDataRd_s),     // Data (Instruction): between BPI and I-Mem
+                                   .wb_m_dat_o(),                 // not connected
+                                   .wb_m_we_o(),                  // not connected
+                                   .wb_m_sel_o(),                 // not connected
+                                   .wb_m_stb_o(),                 // not connected
+                                   .wb_m_ack_i(1'b1),             // not connected
+                                   .wb_m_cyc_o()                  // not connected
+                                  );
+  // 2Do: I-Mem needs a slave BPI.
+  
   // delay of im_upd
   always_ff @(posedge tck_i, posedge tap_rst_s) 
   begin
@@ -255,6 +273,24 @@ module as_top_mem (input logic                       clk_i,
   //--------------------------------------------
   // data memory
   //--------------------------------------------
+  // M-BPI
+  as_master_bpi #(64, 64) mDataBpi(
+                                   .rst_i(rst_i),
+                                   .clk_i(clk_i),
+                                   .addr_i(dBusAddr3_s),            // X Address to D-Mem (Logic - BPI)
+                                   .dat_from_core_i(dBusDataWr3_s), // X Data to D-Mem (Logic - BPI)
+                                   .dat_to_core_o(dBusDataRd3_s),   // X Data from D-Mem (BPI - Logic)
+                                   .wr_i(dMemWr3_s),// X Write enable (= not read)
+                                   .wb_m_addr_o(dBusAddr_s),     // X Address to D-Mem (BPI - Mem)
+                                   .wb_m_dat_i(dBusDataRd_s),    // X Data from Mem (Mem - BPI)
+                                   .wb_m_dat_o(dBusDataWr_s),    // X Data to D-Mem (BPI - Mem)
+                                   .wb_m_we_o(wbdwe_s),
+                                   .wb_m_sel_o(sel_s),
+                                   .wb_m_stb_o(wbdstb1_s),
+                                   .wb_m_ack_i(wdbAckAll_s),
+                                   .wb_m_cyc_o(wbdcyc_s)
+                                  );
+  
   assign wbdstDMem_s = wbdstb1_s & wbdcycarb_s & csx_s[0];
   assign opcode_s    = ir_s[6:0];
   assign func3_s     = ir_s[14:12];

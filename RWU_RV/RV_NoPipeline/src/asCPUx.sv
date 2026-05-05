@@ -48,23 +48,13 @@ module as_cpux (input  logic                         clk_i,
                input  logic                          sc01_shift_i, // scan: shift enable
                input  logic                          sc01_clock_i, // scan: clock enabe
                // Instruction bus
-               input  logic [instr_width-1:0]        wbiBusDataRd_i, // data out from imem
-               output logic [instr_width-1:0]        wbiBusDataWr_o, // data in to imem            -- not connected
-               output logic [iaddr_width-1:0]        wbiBusAddr_o,   // address for imem
-               output logic                          wbiBusWe_o,     // we for mem                 -- not needed
-               output logic [7:0]                    wbiBusSel_o,    // sel for mem                -- not needed
-               output logic                          wbiBusStb_o,    // stb for mem                -- not needed
-               input  logic                          wbiBusAck_i,    // ack for mem                -- not used
-               output logic                          wbiBusCyc_o,    // cyc for mem                -- not needed
+               output logic [iaddr_width-1:0]        iBusAddr_o,     // I-Bus: address
+               input  logic [instr_width-1:0]        iBusDataRd_i,   // I-Bus: data
                // Data bus
-               input  logic [reg_width-1:0]          wbdBusDataRd_i, // data out from dmem
-               output logic [reg_width-1:0]          wbdBusDataWr_o, // data in to dmem
-               output logic [daddr_width-1:0]        wbdBusAddr_o,   // address for dmem
-               output logic                          wbdBusWe_o,     // we for mem
-               output logic [7:0]                    wbdBusSel_o,    // sel for mem
-               output logic                          wbdBusStb_o,    // stb for mem
-               input  logic                          wbdBusAck_i,    // ack for mem
-               output logic                          wbdBusCyc_o,    // cyc for mem
+               output logic [daddr_width-1:0]        dBusAddr_o,     // address for dmem
+               output logic [reg_width-1:0]          dBusDataWr_o,   // data to dmem
+               input  logic [reg_width-1:0]          dBusDataRd_i,   // data from dmem
+               output logic                          dBusWe_o,       // write enable fo dmem
                // IRQ
                input logic [irq_total_num_ext_c-1:0] irq_ext_i // External interrupts, irq_ext_i[7] = GPIO
               );
@@ -169,44 +159,18 @@ module as_cpux (input  logic                         clk_i,
   //--------------------------------------------
   // Master BPI Instruction Bus
   //--------------------------------------------
-  as_master_bpi #(64, 32) mInstrBpi(
-                                   .rst_i(rst_i),
-                                   .clk_i(clk_i),
-                                   .addr_i(iBusAddr_s),           // Address for next instruction (I-Mem: sync. read)
-                                   .dat_from_core_i('b0),         // not connected
-                                   .dat_to_core_o(iBusDataRd_s),  // Instruction
-                                   .wr_i(1'b0),
-                                   .wb_m_addr_o(wbiBusAddr_o),    // Address for next instruction (I-Mem: sync. read)
-                                   .wb_m_dat_i(wbiBusDataRd_i),   // Instruction
-                                   .wb_m_dat_o(wbiBusDataWr_o),   // not connected
-                                   .wb_m_we_o(wbiBusWe_o),        // not needed
-                                   .wb_m_sel_o(wbiBusSel_o),      // not needed
-                                   .wb_m_stb_o(wbiBusStb_o),      // not needed
-                                   .wb_m_ack_i(wbiBusAck_i),      // not used
-                                   .wb_m_cyc_o(wbiBusCyc_o)       // not needed
-                                  );
+  assign iBusAddr_o = iBusAddr_s;
+  assign iBusDataRd_s = iBusDataRd_i;
 
   //--------------------------------------------
   // Master BPI Data Bus
   //--------------------------------------------
   assign dbpi_req_s = 1'b1; // kann weg!!
-  
-  as_master_bpi #(64, 64) mDataBpi(
-                                   .rst_i(rst_i),
-                                   .clk_i(clk_i),
-                                   .addr_i(dBusAddr_s),            // Address to D-Mem
-                                   .dat_from_core_i(dBusDataWr_s), // Data to D-Mem (write)
-                                   .dat_to_core_o(dBusDataRd_s),   // Data from D-Mem (read)
-                                   .wr_i(dMemWr_s && exec_phase_s),
-                                   .wb_m_addr_o(wbdBusAddr_o),
-                                   .wb_m_dat_i(wbdBusDataRd_i),
-                                   .wb_m_dat_o(wbdBusDataWr_o),
-                                   .wb_m_we_o(wbdBusWe_o),
-                                   .wb_m_sel_o(wbdBusSel_o),
-                                   .wb_m_stb_o(wbdBusStb_o),
-                                   .wb_m_ack_i(wbdBusAck_i),
-                                   .wb_m_cyc_o(wbdBusCyc_o)
-                                  );
+
+  assign dBusWe_o     = dMemWr_s && exec_phase_s;
+  assign dBusAddr_o   = dBusAddr_s;
+  assign dBusDataWr_o = dBusDataWr_s;
+  assign dBusDataRd_s = dBusDataRd_i;
 
   //--------------------------------------------
   // PC, Program Counter and IR (Instruction Register)

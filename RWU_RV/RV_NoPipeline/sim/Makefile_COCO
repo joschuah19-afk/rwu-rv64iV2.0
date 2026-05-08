@@ -34,7 +34,7 @@ VERILOG_SOURCES = \
 	../src/asDecode.sv \
 	../../../ip_cgu/src/asCguCore.sv \
 	../../../ip_cgu/src/asCguTop.sv \
-	../src/asTopMem.sv
+	../src/asTopMem.sv 
 
 EXTRA_ARGS += --trace
 EXTRA_ARGS += --sv

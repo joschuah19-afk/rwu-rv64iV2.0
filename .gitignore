@@ -111,6 +111,9 @@ dist/
 out/
 # Vivado
 sim/
+!sim/Makefile
+!sim/Makefile_COCO
+!sim/Makefile_SV
 build/
 .cache/
 *.jou

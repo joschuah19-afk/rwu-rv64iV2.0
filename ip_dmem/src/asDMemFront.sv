@@ -17,7 +17,7 @@ module as_dmem_front ( input logic [dmem_addr_width-1:0] addr_i,
                        output logic [7:0]		 byteEn_o,
                        output logic [reg_width-1:0]	 dataToMem_o);
   
-  parameter int dwidth = reg_width;
+  //parameter int dwidth = reg_width;  // unused (Verilator UNUSEDPARAM)
   parameter int awidth = dmem_addr_width;
 
   logic [reg_width-1:0]	  dataw_s;              // Input data after register

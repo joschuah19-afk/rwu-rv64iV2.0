@@ -15,7 +15,7 @@ import as_pack::*;
 // - Call: as_slave_bpi #(64,64) myBpi ( all ports );
 //-----------------------------------------------
 module as_slave_bpi #( parameter addr_width = 64,
-                       parameter data_width = 64 )
+                       parameter data_width = 64 )  // passed by callers; not used internally (uses reg_width from package)
                      ( input  logic                  rst_i,
                        input  logic                  clk_i,
                        // kernel side

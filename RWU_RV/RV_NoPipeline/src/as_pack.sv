@@ -109,19 +109,19 @@ package as_pack;
   
   // general
   localparam int       reg_width        = 64; // = data width
-  localparam int       reg_2_width      = 32; // = word width
+  //localparam int       reg_2_width      = 32; // = word width  // unused (Verilator UNUSEDPARAM)
   localparam int       iaddr_width      = 64; // must be = reg_width
   localparam int       daddr_width      = 64;
   localparam int       instr_width      = 32;
   // controls
-  localparam int       alusel_width     = 4; // ALU according Hennessy Pat.
-  localparam int       aluselrv_width   = 5; // ALU according Harris
-  localparam int       dmuxsel_width    = 2;
-  localparam int       immsrc_width     = 3;
-  localparam int       aluop_width      = 2;
-  localparam int       controls01_width = 14; // asMainDec
+  //localparam int       alusel_width     = 4; // ALU according Hennessy Pat.  // unused (Verilator UNUSEDPARAM)
+  //localparam int       aluselrv_width   = 5; // ALU according Harris           // unused (Verilator UNUSEDPARAM)
+  //localparam int       dmuxsel_width    = 2;                                   // unused (Verilator UNUSEDPARAM)
+  //localparam int       immsrc_width     = 3;                                   // unused (Verilator UNUSEDPARAM)
+  //localparam int       aluop_width      = 2;                                   // unused (Verilator UNUSEDPARAM)
+  //localparam int       controls01_width = 14; // asMainDec                     // unused (Verilator UNUSEDPARAM)
   // instruction fields
-  localparam int       func7_width      = 7;
+  //localparam int       func7_width      = 7;                                   // unused (Verilator UNUSEDPARAM)
   localparam int       func3_width      = 3;
   localparam int       opcode_width     = 7;
   // register file
@@ -161,7 +161,7 @@ package as_pack;
   //                   div = 25:  f = 5 MHz
   //                   div = 200: f = 625 kHz
   //                   div = 400: f = 312.5 kHz
-  localparam int       clk_zybo_per = 8;    // ns, f = 125 MHz
+  //localparam int       clk_zybo_per = 8;    // ns, f = 125 MHz  // unused (Verilator UNUSEDPARAM)
   //localparam int       clk_core_per = 1600; // ns, f = 625 kHz
   localparam int       clk_core_div = 80;
   //localparam int       clk_qspi_per = 200;  // ns, 20 Mbit/s -> f = 5 MHz -> div = 25
@@ -170,16 +170,16 @@ package as_pack;
   localparam int       clk_bus2_div = 100;
 
   // Memory map
-  localparam logic [63:0]       dmem_start_address_c           = 64'h00000000_00000000; // byte address
-  localparam logic [63:0]       dmem_end_address_c             = 64'h00000000_0000FFFF;
-  localparam logic [63:0]       gpio_start_address_c           = 64'h00000001_00000000;
-  localparam logic [63:0]       gpio_end_address_c             = 64'h00000001_0000005F; // 12 registers space
-  localparam logic [63:0]       qspi_start_address_c           = 64'h00000001_00000060;
-  localparam logic [63:0]       qspi_end_address_c             = 64'h00000001_000000BF; // 12 registers space
-  localparam logic [63:0]       cgu_start_address_c            = 64'h00000001_000000C0;
-  localparam logic [63:0]       cgu_end_address_c              = 64'h00000001_0000011F; // 12 registers space
-  localparam logic [63:0]       uart0_start_address_c          = 64'h00000001_00000120;
-  localparam logic [63:0]       uart0_end_address_c            = 64'h00000001_0000017F; // 12 registers space
+  //localparam logic [63:0]       dmem_start_address_c           = 64'h00000000_00000000; // byte address  // unused (Verilator UNUSEDPARAM)
+  //localparam logic [63:0]       dmem_end_address_c             = 64'h00000000_0000FFFF;               // unused (Verilator UNUSEDPARAM)
+  //localparam logic [63:0]       gpio_start_address_c           = 64'h00000001_00000000;               // unused (Verilator UNUSEDPARAM)
+  //localparam logic [63:0]       gpio_end_address_c             = 64'h00000001_0000005F; // 12 regs     // unused (Verilator UNUSEDPARAM)
+  //localparam logic [63:0]       qspi_start_address_c           = 64'h00000001_00000060;               // unused (Verilator UNUSEDPARAM)
+  //localparam logic [63:0]       qspi_end_address_c             = 64'h00000001_000000BF; // 12 regs     // unused (Verilator UNUSEDPARAM)
+  //localparam logic [63:0]       cgu_start_address_c            = 64'h00000001_000000C0;               // unused (Verilator UNUSEDPARAM)
+  //localparam logic [63:0]       cgu_end_address_c              = 64'h00000001_0000011F; // 12 regs     // unused (Verilator UNUSEDPARAM)
+  //localparam logic [63:0]       uart0_start_address_c          = 64'h00000001_00000120;               // unused (Verilator UNUSEDPARAM)
+  //localparam logic [63:0]       uart0_end_address_c            = 64'h00000001_0000017F; // 12 regs     // unused (Verilator UNUSEDPARAM)
 
   // register addresses
   //localparam int       gpio_base_addr_c               = 64'h00000001_00000000; // byte address
@@ -206,52 +206,52 @@ package as_pack;
   localparam logic [63:0]       gpio_imsc_reg_rst_c            =  '1; // change to 0 before tape-out
   localparam logic [63:0]       gpio_mis_reg_addr_offs_c       = 72;
   localparam logic [63:0]       gpio_mis_reg_rst_c             =  '0;
-  // QSPI
-  localparam logic [63:0]       qspi_id_reg_addr_offs_c        =  0;
-  localparam logic [63:0]       qspi_id_reg_addr_rst_c         = 64'h00000000_00000010;
-  localparam logic [63:0]       qspi_ctrl_reg_addr_offs_c      =  8; // check
-  localparam logic [63:0]       qspi_ctrl_reg_addr_rst_c       = '0; // check
-  localparam logic [63:0]       qspi_cmd_reg_addr_offs_c       = 16; // check
-  localparam logic [63:0]       qspi_cmd_reg_addr_rst_c        = '0; // check
-  localparam logic [63:0]       qspi_addr_reg_addr_offs_c      = 24; // check
-  localparam logic [63:0]       qspi_addr_reg_rst_c            = '0; // check
-  localparam logic [63:0]       qspi_len_reg_addr_offs_c       = 32; // check
-  localparam logic [63:0]       qspi_len_reg_rst_c             = '0; // check
-  localparam logic [63:0]       qspi_dummy_reg_addr_offs_c     = 40; // check
-  localparam logic [63:0]       qspi_dummy_reg_rst_c           = '0; // check
-  localparam logic [63:0]       qspi_clkdiv_reg_addr_offs_c    = 48; // check
-  localparam logic [63:0]       qspi_clkdiv_reg_rst_c          = '0; // check
-  localparam logic [63:0]       qspi_timeout_reg_addr_offs_c   = 56; // check
-  localparam logic [63:0]       qspi_timeout_reg_rst_c         = '0; // check
-  localparam logic [63:0]       qspi_isr_reg_addr_offs_c       = 64; // check
-  localparam logic [63:0]       qspi_isr_reg_rst_c             = '0;
-  localparam logic [63:0]       qspi_ris_reg_addr_offs_c       = 72; // check
-  localparam logic [63:0]       qspi_ris_reg_rst_c             = '0;
-  localparam logic [63:0]       qspi_imsc_reg_addr_offs_c      = 80; // check
-  localparam logic [63:0]       qspi_imsc_reg_rst_c            = '1;
-  localparam logic [63:0]       qspi_mis_reg_addr_offs_c       = 88; // check
-  localparam logic [63:0]       qspi_mis_reg_rst_c             = '0;
-  localparam logic [63:0]       qspi_icr_reg_addr_offs_c       = 96; // check
-  localparam logic [63:0]       qspi_icr_reg_rst_c             = '0;
-  localparam logic [63:0]       qspi_rx_reg_addr_offs_c        = 104; // check
-  localparam logic [63:0]       qspi_rx_reg_rst_c              = '0;
-  localparam logic [63:0]       qspi_tx_reg_addr_offs_c        = 112; // check
-  localparam logic [63:0]       qspi_tx_reg_rst_c              = '0;
-  localparam logic [63:0]       qspi_fifost_reg_addr_offs_c    = 120; // check
-  localparam logic [63:0]       qspi_fifost_reg_rst_c          = '0;
-  localparam logic [63:0]       qspi_xip_reg_addr_offs_c       = 128; // check
-  localparam logic [63:0]       qspi_xip_reg_rst_c             = 64'h00000000_000000A0;
-  localparam logic [63:0]       qspi_stat_reg_addr_offs_c      = 136; // check
-  localparam logic [63:0]       qspi_stat_reg_rst_c            = '0;
+  // QSPI  // unused (Verilator UNUSEDPARAM) — QSPI IP not yet instantiated in RV_NoPipeline
+  //localparam logic [63:0]       qspi_id_reg_addr_offs_c        =  0;
+  //localparam logic [63:0]       qspi_id_reg_addr_rst_c         = 64'h00000000_00000010;
+  //localparam logic [63:0]       qspi_ctrl_reg_addr_offs_c      =  8; // check
+  //localparam logic [63:0]       qspi_ctrl_reg_addr_rst_c       = '0; // check
+  //localparam logic [63:0]       qspi_cmd_reg_addr_offs_c       = 16; // check
+  //localparam logic [63:0]       qspi_cmd_reg_addr_rst_c        = '0; // check
+  //localparam logic [63:0]       qspi_addr_reg_addr_offs_c      = 24; // check
+  //localparam logic [63:0]       qspi_addr_reg_rst_c            = '0; // check
+  //localparam logic [63:0]       qspi_len_reg_addr_offs_c       = 32; // check
+  //localparam logic [63:0]       qspi_len_reg_rst_c             = '0; // check
+  //localparam logic [63:0]       qspi_dummy_reg_addr_offs_c     = 40; // check
+  //localparam logic [63:0]       qspi_dummy_reg_rst_c           = '0; // check
+  //localparam logic [63:0]       qspi_clkdiv_reg_addr_offs_c    = 48; // check
+  //localparam logic [63:0]       qspi_clkdiv_reg_rst_c          = '0; // check
+  //localparam logic [63:0]       qspi_timeout_reg_addr_offs_c   = 56; // check
+  //localparam logic [63:0]       qspi_timeout_reg_rst_c         = '0; // check
+  //localparam logic [63:0]       qspi_isr_reg_addr_offs_c       = 64; // check
+  //localparam logic [63:0]       qspi_isr_reg_rst_c             = '0;
+  //localparam logic [63:0]       qspi_ris_reg_addr_offs_c       = 72; // check
+  //localparam logic [63:0]       qspi_ris_reg_rst_c             = '0;
+  //localparam logic [63:0]       qspi_imsc_reg_addr_offs_c      = 80; // check
+  //localparam logic [63:0]       qspi_imsc_reg_rst_c            = '1;
+  //localparam logic [63:0]       qspi_mis_reg_addr_offs_c       = 88; // check
+  //localparam logic [63:0]       qspi_mis_reg_rst_c             = '0;
+  //localparam logic [63:0]       qspi_icr_reg_addr_offs_c       = 96; // check
+  //localparam logic [63:0]       qspi_icr_reg_rst_c             = '0;
+  //localparam logic [63:0]       qspi_rx_reg_addr_offs_c        = 104; // check
+  //localparam logic [63:0]       qspi_rx_reg_rst_c              = '0;
+  //localparam logic [63:0]       qspi_tx_reg_addr_offs_c        = 112; // check
+  //localparam logic [63:0]       qspi_tx_reg_rst_c              = '0;
+  //localparam logic [63:0]       qspi_fifost_reg_addr_offs_c    = 120; // check
+  //localparam logic [63:0]       qspi_fifost_reg_rst_c          = '0;
+  //localparam logic [63:0]       qspi_xip_reg_addr_offs_c       = 128; // check
+  //localparam logic [63:0]       qspi_xip_reg_rst_c             = 64'h00000000_000000A0;
+  //localparam logic [63:0]       qspi_stat_reg_addr_offs_c      = 136; // check
+  //localparam logic [63:0]       qspi_stat_reg_rst_c            = '0;
 
   localparam logic [63:0]       cgu_id_reg_addr_offs_c         =  0;
   localparam logic [63:0]       cgu_id_reg_addr_rst_c          = 64'h00000000_00000010;
 
-  localparam logic [63:0]       dmem_id_reg_addr_offs_c        =  0;
-  localparam logic [63:0]       dmem_id_reg_addr_rst_c         = 64'h00000000_00000011;
+  //localparam logic [63:0]       dmem_id_reg_addr_offs_c        =  0;                       // unused (Verilator UNUSEDPARAM)
+  //localparam logic [63:0]       dmem_id_reg_addr_rst_c         = 64'h00000000_00000011;    // unused (Verilator UNUSEDPARAM)
 
   //IRQ
-  localparam int       irq_total_num_c                =  8;
+  //localparam int       irq_total_num_c                =  8;  // unused (Verilator UNUSEDPARAM)
   localparam int       irq_total_num_ext_c            =  8;
   
 endpackage

@@ -140,7 +140,6 @@ elseif(SIMULATOR STREQUAL "verilator")
                 -Wno-PINCONNECTEMPTY
                 -Wno-PINNOCONNECT
                 -Wno-UNUSEDSIGNAL
-                -Wno-UNUSEDPARAM
                 -Wno-IMPORTSTAR
                 --Mdir ${CMAKE_CURRENT_BINARY_DIR}/obj_dir
                 -DLOGIC_SV

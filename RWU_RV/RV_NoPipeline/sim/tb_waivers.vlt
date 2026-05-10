@@ -10,4 +10,9 @@
 lint_off -rule INITIALDLY   -file "*/tb/tb_rv64i_*.sv"  // <= in initial statt =
 lint_off -rule BLKSEQ       -file "*/tb/tb_rv64i_*.sv"  // = in always statt <=
 lint_off -rule PROCASSINIT  -file "*/tb/tb_rv64i_*.sv"  // proc assign auf Var mit init-Wert
-lint_off -rule ZERODLY      -file "*/tb/tb_rv64i_*.sv"  // #-Delay mit variablem Wert
+lint_off -rule ZERODLY      -file "*/tb/tb_rv64i_*.sv"
+lint_off -rule UNUSEDPARAM  -file "*/tb/tb_rv64i_*.sv"  // TB-lokale Parameter
+
+// asSBpi: data_width ist Teil der Modulschnittstelle (positional pass durch Caller),
+// wird intern nicht genutzt (Modul verwendet reg_width aus Package stattdessen)
+lint_off -rule UNUSEDPARAM -file "*/src/asSBpi.sv"  // #-Delay mit variablem Wert

@@ -10,11 +10,14 @@ rm -rf build
 cmake -S . -B build
 cmake -B build -DSIMULATOR=xsim
 cmake -B build -DSIMULATOR=verilator
+cmake -S . -B build -DSIMULATOR=verilator -DWAVES=ON
 # executes a single simulation (For waveform generation, un-comment the line
 #   in the SIM section of CMakeLists.txt. Do not forget to comment
 #   it after the single-run.)
 cmake -B build -DWAVES=ON
+cmake -B build -DWAVES=ON -DSIMULATOR=verilator
 cmake --build build --target sim_readgpioid
+cmake --build build --target sim_instr06addi
 # executes all simulations as regression
 cmake --build build --target regression
 # executes all simulations as regression and collects the errors

@@ -142,11 +142,11 @@ elseif(SIMULATOR STREQUAL "verilator")
                 -Wno-UNUSEDSIGNAL
                 -Wno-UNUSEDPARAM
                 -Wno-IMPORTSTAR
-                -Wno-INITIALDLY
                 --Mdir ${CMAKE_CURRENT_BINARY_DIR}/obj_dir
                 -DLOGIC_SV
                 --trace-fst
                 --top-module ${TB_TOP}
+                ${PROJECT_ROOT}/sim/tb_waivers.vlt
                 ${SOURCES_SV}
         DEPENDS ${RV64_MEM}
         COMMENT "Verilating and building ${TB_TOP}"

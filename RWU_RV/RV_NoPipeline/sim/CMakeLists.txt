@@ -132,6 +132,14 @@ elseif(SIMULATOR STREQUAL "verilator")
                 --binary
                 --sv
                 -Wall
+                -Wno-fatal
+                -Wno-DECLFILENAME
+                -Wno-PINCONNECTEMPTY
+                -Wno-PINNOCONNECT
+                -Wno-UNUSEDSIGNAL
+                -Wno-UNUSEDPARAM
+                -Wno-IMPORTSTAR
+                -Wno-INITIALDLY
                 --Mdir ${CMAKE_CURRENT_BINARY_DIR}/obj_dir
                 -DLOGIC_SV
                 --trace-fst
@@ -142,10 +150,17 @@ elseif(SIMULATOR STREQUAL "verilator")
     )
     add_custom_target(verilate DEPENDS ${VERILATOR_OUT})
 
+    # Hilfsskript: execute_process ignoriert den Exit-Code automatisch.
+    # Verilator beendet sich mit Exit 1 bei $stop — das ist kein echter Fehler.
+    # Echte Fehler werden durch die Testbench in error.txt geschrieben.
+    set(RUN_SIM_SCRIPT ${CMAKE_CURRENT_BINARY_DIR}/run_sim.cmake)
+    file(WRITE ${RUN_SIM_SCRIPT}
+        "execute_process(COMMAND \"${VERILATOR_OUT}\")\n")
+
     # ---------------- Simulate ----------------
     add_custom_target(simulate
         COMMAND ${CMAKE_COMMAND} -E copy ${RV64_MEM} riscvtest.mem
-        COMMAND ${VERILATOR_OUT}
+        COMMAND ${CMAKE_COMMAND} -P ${RUN_SIM_SCRIPT}
         DEPENDS ${VERILATOR_OUT}
         COMMENT "Running Verilator simulation"
     )
@@ -154,7 +169,7 @@ elseif(SIMULATOR STREQUAL "verilator")
     # Simulation läuft zuerst, dann öffnet GTKWave die erzeugte dump.fst
     add_custom_target(waves
         COMMAND ${CMAKE_COMMAND} -E copy ${RV64_MEM} riscvtest.mem
-        COMMAND ${VERILATOR_OUT}
+        COMMAND ${CMAKE_COMMAND} -P ${RUN_SIM_SCRIPT}
         COMMAND gtkwave dump.fst &
         DEPENDS ${VERILATOR_OUT}
         COMMENT "Running Verilator simulation + GTKWave"

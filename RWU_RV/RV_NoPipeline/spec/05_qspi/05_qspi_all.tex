@@ -54,6 +54,8 @@ Regulations for history table:
   \hline
   2026-04-13 & A. Siggelkow, Claude & Completely revised HW \\
   \hline
+  2026-05-12 & A. Siggelkow, Claude & Add AXI4 data port (dual-bus architecture) \\
+  \hline
 \end{tabularx}
 \end{table}
 
@@ -122,7 +124,9 @@ The following table \ref{tab:asQspiPer02} lists all hardware interfaces which ar
   \hline
   Clock & clk\_i & clk\_i \\
   \hline
-  Bus & System Bus & Wishbone \\
+  Bus (config) & Wishbone slave & Wishbone B4 Classic \\
+  \hline
+  Bus (data)   & AXI4 slave     & AXI4 read-only (AR+R, 64-bit, 4-beat INCR burst) \\
   \hline
   Interrupt & qspi\_irq\_o &  qspi\_irq\_s \\
   \hline
@@ -139,7 +143,20 @@ The following table \ref{tab:asQspiPer02} lists all hardware interfaces which ar
 % System Integration of QSPI0: Bus Interface
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsubsection{Bus Interface}
-Wishbone Slave BPI.
+The QSPI controller exposes two independent bus interfaces:
+
+\begin{description}
+  \item[Wishbone Slave (configuration port)] Provides software access to all configuration
+    registers, the TX/RX FIFOs, and the interrupt registers. Implemented by \texttt{as\_slave\_bpi}.
+    Protocol: Wishbone B4 Classic, zero-wait-state, 64-bit data width.
+    See Section~\ref{subsec:asSlaveBpi} (Architecture Concepts: Bus Concept).
+
+  \item[AXI4 Slave (data port)] Provides cache-refill read access for the Memory Arbiter
+    (D-Cache has priority, I-Cache second). This port accepts 4-beat INCR bursts
+    (ARLEN=3, ARSIZE=3, 64-bit data) and returns one 32-byte cache line per transaction.
+    Only the AR and R channels are implemented; AW/W/B channels are absent.
+    See Section~\ref{subsec:asAxi4Bus} (Architecture Concepts: Bus Concept).
+\end{description}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % System Integration of QSPI0: Registers
@@ -204,6 +221,7 @@ Wishbone Slave BPI.
   \item Peripheral Architecture Concept Section ``Architecture Concepts''
   \begin{itemize}
     \item Slave WB (Wishbone) BPI Section ``Architecture Concepts''
+    \item AXI4 Cache Bus Section ``Architecture Concepts'' (Bus Concept)
     \item Peripheral ID Registers Section ``Architecture Concepts''
     \item Peripheral Clocking Concept Section ``Architecture Concepts''
     \item Clock Control Registers Section ``Architecture Concepts''
@@ -253,7 +271,10 @@ Wishbone Slave BPI.
 \label{subsec:qspifunc01}
 The QSPI controller is a memory-mapped peripheral providing high-speed SPI and Quad-SPI access to external flash devices.
 
-The controller is accessed via a 64-bit Wishbone slave interface (dummy citation \cite{lehm}).
+The controller exposes two bus interfaces: a Wishbone B4 Classic slave for software
+configuration and a read-only AXI4 slave for cache-refill data transfers (dummy citation \cite{lehm}).
+Software accesses all registers via Wishbone; the Memory Arbiter fetches 32-byte cache
+lines via the AXI4 port using 4-beat INCR bursts (ARLEN=3, ARSIZE=3, 64-bit).
 
 \paragraph{General Features: }
 \begin{itemize}
@@ -733,58 +754,61 @@ correct operation with the asynchronous-read \texttt{as\_fifo}.
 % Structural Overview
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Structural Overview}
-The QSPI is a Wishbone slave (asSlaveBPI) peripheral. This peripheral architecture aims for high bus performance by dividing peripherals into two clock domains. Figure \ref{fig:asqspi01} shows a simplified block diagram of the QSPI asSlaveBPI peripheral.
+The QSPI controller is a dual-port peripheral: it is accessed from the Wishbone bus for
+configuration (register file, FIFOs, interrupts) and from the AXI4 bus for cache-refill
+data transfers. Both clock domains are synchronous to \texttt{clk\_i}. Figure \ref{fig:asqspi01}
+shows the block diagram.
 
-\begin{figure}[H] 
+\begin{figure}[H]
 \centering
-\begin{tikzpicture}
-% background, gray rectangles
-\filldraw[fill=lightgray, draw=black] (0,0) rectangle (10,4);
-\filldraw[fill=lightgray, draw=black] (0,4) rectangle (10,7);
-% peropheral kernel
-\filldraw[fill=white, draw=black] (2,5) rectangle (8,6);
-\draw (5,5.5) node[draw, color=white, fill=white, text=black] {QSPI peripheral kernel};
-% register, IRQ, sync., FIFO
-\draw (1.5,4) node[draw, color=black, fill=white, text=black, align=center] {Clock Gating \\ Block};
-\draw (4,4) node[draw, color=black, fill=white, text=black, align=center] {Sync. \\ Block};
-\draw (2,2.5) node[draw, color=black, fill=white, text=black, align=center] {Service Request \\ Block};
-\draw (5,2.5) node[draw, color=black, fill=white, text=black, align=center] {SFR \\ Block};
-\draw (7.5,2.5) node[draw, color=black, fill=white, text=black, align=center] {TX \\ FIFO};
-\draw (9,2.5) node[draw, color=black, fill=white, text=black, align=center] {RX \\ FIFO};
-\draw (5,0.25) node[draw, color=black, fill=white, text=black] {Slave BPI};
-\node at (8,4.25) {Kernel clock domain};
-\node at (8,0.25) {Bus clock domain};
-\node at (1,0.25) {QSPI};
-% outside clock connection
-\draw[->] (-1,0.25) -- (0, 0.25);
-\node at (-2,0.25) {kernel clock};
-% outside chip NOR-Flash
-\draw (5,9.5) node[draw, color=black, fill=white, text=black] {NOR-Flash};
-% ... data line
-\draw[<->] (5,7) -- (5, 9.2) node[midway, above=2pt, sloped] {\small \asqspiData};
-\node at (5,8) (slash) {/};
-\node[above=-1pt] at (slash.east) {\small 4};
-% ... clock line
-\draw[->] (4.2,7) -- (4.2, 9.2) node[midway, above=2pt, sloped] {\small \asqspiSCK};
-% ... chip select
-\draw[->] (6,7) -- (6, 9.2) node[midway, above=2pt, sloped] {\small  \asqspiCS };
-% IRQ
-\draw (1,0) -- (1,-0.5);
-\draw[->] (1,-0.5) -- (0, -0.5);
-\node at (-1,-0.5) {qspi\_irq};
-% Bus
-\node [double arrow, draw, fill=white, minimum height=1cm] at (5,-2) {WB-Bus};
-\node [single arrow, draw, fill=white, minimum height=1.5cm, minimum width=1cm, shape border rotate=90] at (5,-1.0) {};
+\begin{tikzpicture}[>=stealth]
+% ── background bands ──────────────────────────────────────────
+\filldraw[fill=lightgray!60, draw=black] (0,0) rectangle (12,4);
+\filldraw[fill=lightgray!30, draw=black] (0,4) rectangle (12,7);
+% ── kernel block ──────────────────────────────────────────────
+\filldraw[fill=white, draw=black] (2,5) rectangle (10,6);
+\node at (6,5.5) {QSPI peripheral kernel};
+% ── bus-domain sub-blocks ─────────────────────────────────────
+\draw (1.5,4) node[draw,fill=white,align=center] {Clock Gating \\ Block};
+\draw (4.0,4) node[draw,fill=white,align=center] {Sync. \\ Block};
+\draw (2.0,2.5) node[draw,fill=white,align=center] {Service Request \\ Block};
+\draw (5.5,2.5) node[draw,fill=white,align=center] {SFR \\ Block};
+\draw (8.0,2.5) node[draw,fill=white,align=center] {TX \\ FIFO};
+\draw (9.5,2.5) node[draw,fill=white,align=center] {RX \\ FIFO};
+% ── BPI blocks ────────────────────────────────────────────────
+\draw (3.5,0.4) node[draw,fill=blue!10,text=blue!70!black] {WB Slave BPI};
+\draw (8.5,0.4) node[draw,fill=red!10, text=red!70!black]  {AXI4 Slave BPI};
+% ── domain labels ─────────────────────────────────────────────
+\node[font=\small] at (10.2,4.25) {Kernel clock domain};
+\node[font=\small] at (10.2,0.25) {Bus clock domain};
+% ── NOR-Flash (top) ───────────────────────────────────────────
+\draw (6,9.2) node[draw,fill=white] {NOR-Flash};
+\draw[<->] (6,7) -- (6,8.9) node[midway,sloped,above=2pt,font=\small] {\asqspiData\;[3:0]};
+\draw[->]  (5,7) -- (5,8.9) node[midway,sloped,above=2pt,font=\small] {\asqspiSCK};
+\draw[->]  (7,7) -- (7,8.9) node[midway,sloped,above=2pt,font=\small] {\asqspiCS};
+% ── IRQ ───────────────────────────────────────────────────────
+\draw[->] (1,-0.2) -- (1,-0.9);
+\node[left,font=\small] at (1,-0.6) {qspi\_irq\_o};
+% ── Wishbone bus (blue, left) ─────────────────────────────────
+\node[double arrow,draw,fill=blue!10,text=blue!70!black,
+      minimum height=0.8cm,font=\small] at (3.5,-1.8) {Wishbone B4};
+\draw[blue!70!black,->] (3.5,-1.3) -- (3.5,-0.8);
+% ── AXI4 bus (red, right) ─────────────────────────────────────
+\node[double arrow,draw,fill=red!10,text=red!70!black,
+      minimum height=0.8cm,font=\small] at (8.5,-1.8) {AXI4 (AR+R)};
+\draw[red!70!black,->] (8.5,-1.3) -- (8.5,-0.8);
 \end{tikzpicture}
-\caption{QSPI asSlaveBPI Peripheral}
+\caption{QSPI Dual-Port Peripheral (Wishbone config + AXI4 data)}
 \label{fig:asqspi01}
 \end{figure}
 
-\paragraph{QSPI Peripheral Kernel: } The QSPI kernel provides the specific functionality of the QSPI interface, that is described in Section \ref{subsec:qspifunc02}. The peripheral kernel has its own kernel clock domain.
+\paragraph{QSPI Peripheral Kernel: } The QSPI kernel provides the specific functionality of the QSPI interface, described in Section \ref{subsec:qspifunc02}. It runs in the system clock domain.
 
-\paragraph{Bus Peripheral Interface BPI: } The BPI is responsible for the interconnection of the QSPI registers with an on-chip bus. Also the peripheral clock gating is controlled by the BPI.
+\paragraph{Wishbone Slave BPI: } Connects the QSPI configuration registers to the system Wishbone bus. Zero-wait-state, 64-bit. Handles all SW register accesses, FIFO reads/writes, and interrupt register updates.
 
-\paragraph{asSlaveBPI Block: } The asSlaveBPI block lies within the bus clock domain and contains the following subblocks:
+\paragraph{AXI4 Slave BPI: } Accepts cache-refill read requests from the Memory Arbiter via the AXI4 read channels (AR+R). Executes a Quad Fast Read (opcode 0x6B) on the NOR-Flash for each ARLEN=3 burst and returns 4~$\times$~64-bit beats (32~bytes = one cache line) with \texttt{RLAST} asserted on the fourth beat.
+
+\paragraph{asSlaveBPI Block: } The Wishbone BPI block lies within the bus clock domain and contains the following subblocks:
 \begin{description}
   \item [Special Function Register Block] The Special Function Register Block contains all FIFO specific registers and all special function registers (SFR) of the peripheral kernel that are accessible by the SW via the system bus.
   \item [Service Request Block SRB] The SRB is used to prepare the interrupt and data transfer requests for the Interrupt Control Unit (ICU) and the DMA Controller (DMAC), respectively (no DMA planned!).
@@ -974,6 +998,66 @@ so a write takes effect on the posedge of the clock during which \texttt{WR\_O}
 is asserted. Read data must be available combinatorially before the posedge.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Structural Overview: I/O of the QSPI AXI4 Slave Port
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsubsection{I/O of the QSPI AXI4 Slave Port}
+\label{subsec:qspiAxi4Port}
+
+Table~\ref{tab:asQspiAxi4} lists the AXI4 slave signals of the QSPI data port.
+Only the read channels (AR and R) are implemented; write channels (AW, W, B) are absent.
+All signals are synchronous to \texttt{clk\_i}.
+
+\begin{table}[H]
+\caption{\texttt{as\_qspi\_top} AXI4 Slave Port Signals (AR + R channels only)}
+\label{tab:asQspiAxi4}
+\centering
+\begin{tabularx}{\textwidth}{|l|l|l|X|}
+  \hline
+  Signal & Dir. & Width & Description \\
+  \hline\hline
+  \multicolumn{4}{|l|}{\textit{AR channel (Address Read):}} \\
+  \hline
+  \texttt{axi\_s\_arvalid\_i} & in  & 1  & Master presents a valid read-address transaction \\
+  \hline
+  \texttt{axi\_s\_arready\_o} & out & 1  & Slave ready to accept address. Asserted when not busy. \\
+  \hline
+  \texttt{axi\_s\_arid\_i}    & in  & 4  & Transaction ID. Echoed back on R channel. \\
+  \hline
+  \texttt{axi\_s\_araddr\_i}  & in  & 32 & Byte address of first beat (must be 32-byte aligned) \\
+  \hline
+  \texttt{axi\_s\_arlen\_i}   & in  & 4  & Burst length minus 1 (always 3; 4 beats per transaction) \\
+  \hline
+  \texttt{axi\_s\_arsize\_i}  & in  & 3  & Beat size code (always 3 = 8~bytes = 64~bit) \\
+  \hline
+  \texttt{axi\_s\_arburst\_i} & in  & 2  & Burst type (always INCR = 2'b01) \\
+  \hline
+  \multicolumn{4}{|l|}{\textit{R channel (Read Data):}} \\
+  \hline
+  \texttt{axi\_s\_rvalid\_o}  & out & 1  & Slave presents valid read data \\
+  \hline
+  \texttt{axi\_s\_rready\_i}  & in  & 1  & Master ready to accept data \\
+  \hline
+  \texttt{axi\_s\_rid\_o}     & out & 4  & Transaction ID (echo of \texttt{axi\_s\_arid\_i}) \\
+  \hline
+  \texttt{axi\_s\_rdata\_o}   & out & 64 & Read data (one beat = 8~bytes of flash data) \\
+  \hline
+  \texttt{axi\_s\_rresp\_o}   & out & 2  & Response: OKAY (2'b00) or SLVERR (2'b10) on flash error \\
+  \hline
+  \texttt{axi\_s\_rlast\_o}   & out & 1  & Asserted on the 4th and final beat of each burst \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\paragraph{Transaction Sequence:}
+\begin{enumerate}
+  \item Master (Memory Arbiter) asserts \texttt{ARVALID} with address, ID, ARLEN=3, ARSIZE=3, ARBURST=INCR.
+  \item Slave asserts \texttt{ARREADY} when idle; address is latched on the handshake cycle.
+  \item Slave initiates a Quad Fast Read (opcode 0x6B) on the NOR-Flash.
+  \item Slave returns 4 data beats on the R channel, asserting \texttt{RVALID} per beat and \texttt{RLAST} on beat~4.
+  \item On a flash error (timeout or kernel error), \texttt{RRESP} = SLVERR on the affected beat; the cache controller maps this to a RISC-V access-fault exception (mcause = 1 for I-Cache, 5 for D-Cache).
+\end{enumerate}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Structural Overview: I/O of the QSPI Top
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsubsection{I/O of the QSPI Top}
@@ -981,7 +1065,7 @@ is asserted. Read data must be available combinatorially before the posedge.
 Table \ref{tab:asQspiPer06} shows the input and outputs of the QSPI Top.
 
 \begin{table}[H]
-\caption{\texttt{as\_qspi\_top} Ports}
+\caption{\texttt{as\_qspi\_top} Ports -- System, Wishbone, and SPI}
 \label{tab:asQspiPer06}
 \centering
 \begin{tabularx}{\textwidth}{|l|l|l|X|}
@@ -991,6 +1075,8 @@ Table \ref{tab:asQspiPer06} shows the input and outputs of the QSPI Top.
   \texttt{rst\_i}       & in  & 1  & Synchronous reset, active high \\
   \hline
   \texttt{clk\_i}       & in  & 1  & System and kernel clock \\
+  \hline
+  \multicolumn{4}{|l|}{\textit{Wishbone slave port (configuration):}} \\
   \hline
   \texttt{wbdAddr\_i}   & in  & 64 & Wishbone address (byte offset from QSPI base) \\
   \hline
@@ -1007,6 +1093,36 @@ Table \ref{tab:asQspiPer06} shows the input and outputs of the QSPI Top.
   \texttt{wbdAck\_o}    & out & 1  & Wishbone acknowledge \\
   \hline
   \texttt{wbdCyc\_i}    & in  & 1  & Wishbone cycle \\
+  \hline
+  \multicolumn{4}{|l|}{\textit{AXI4 slave port (cache-refill data, AR+R channels only):}} \\
+  \hline
+  \texttt{axi\_s\_arvalid\_i} & in  & 1  & AR valid \\
+  \hline
+  \texttt{axi\_s\_arready\_o} & out & 1  & AR ready \\
+  \hline
+  \texttt{axi\_s\_arid\_i}    & in  & 4  & AR transaction ID \\
+  \hline
+  \texttt{axi\_s\_araddr\_i}  & in  & 32 & AR byte address (32-byte aligned) \\
+  \hline
+  \texttt{axi\_s\_arlen\_i}   & in  & 4  & AR burst length (fixed 3 = 4 beats) \\
+  \hline
+  \texttt{axi\_s\_arsize\_i}  & in  & 3  & AR beat size (fixed 3 = 8\,bytes) \\
+  \hline
+  \texttt{axi\_s\_arburst\_i} & in  & 2  & AR burst type (fixed INCR = 2'b01) \\
+  \hline
+  \texttt{axi\_s\_rvalid\_o}  & out & 1  & R valid \\
+  \hline
+  \texttt{axi\_s\_rready\_i}  & in  & 1  & R ready \\
+  \hline
+  \texttt{axi\_s\_rid\_o}     & out & 4  & R transaction ID (echo of arid) \\
+  \hline
+  \texttt{axi\_s\_rdata\_o}   & out & 64 & R data \\
+  \hline
+  \texttt{axi\_s\_rresp\_o}   & out & 2  & R response (OKAY / SLVERR) \\
+  \hline
+  \texttt{axi\_s\_rlast\_o}   & out & 1  & R last beat \\
+  \hline
+  \multicolumn{4}{|l|}{\textit{SPI / Flash and interrupt:}} \\
   \hline
   \texttt{sck\_o}       & out & 1  & SPI clock to NOR-Flash \\
   \hline
@@ -1052,15 +1168,18 @@ The details will be shown in section \ref{subsub:IRQRegs}.
 \paragraph{Block Architecture} -:
 The block architecture is like:
 \begin{verbatim}
-Wishbone
-   |
-Register File + IRQ Logic (SRB)
-   |
-QSPI Kernel FSM
-   |
-TX FIFO / RX FIFO
-   |
-SPI PHY (SCK / CS / IO[3:0])
+Wishbone (config)      AXI4 AR+R (data / cache-refill)
+       |                          |
+  WB Slave BPI             AXI4 Slave BPI
+       |                          |
+Register File + IRQ Logic (SRB)   |
+       \__________________________|
+                    |
+             QSPI Kernel FSM
+                    |
+          TX FIFO / RX FIFO
+                    |
+       SPI PHY (SCK / CS / IO[3:0])
 \end{verbatim}
 
 The kernel is fully state-driven and does not depend on external events such as interrupts or bus timing.

@@ -1408,6 +1408,142 @@ cycles and is de-asserted together with \texttt{*\_flush\_done\_o}.
 \end{itemize}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{DMA Coherency Protocol}
+\label{subsec:dmaCoherency}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsubsection{Overview}
+
+A DMA engine transfers data between memory regions without CPU intervention.
+Coherency problems arise when the CPU has cached a memory location and the
+DMA engine reads or writes that same location, causing one party to see
+stale data.
+
+The RWU-RV64I cache architecture minimises DMA coherency complexity through
+two structural properties:
+
+\begin{enumerate}
+  \item \textbf{Scratchpad is uncacheable.}
+    All CPU stores bypass the D-Cache and go directly to the Scratchpad
+    SRAM.
+    A DMA engine accessing the Scratchpad always sees current data without
+    any cache action.
+  \item \textbf{D-Cache is read-allocate with no dirty lines.}
+    The D-Cache only caches Flash reads.
+    Flash is read-only hardware; a DMA engine cannot write to it.
+    Therefore the D-Cache can never hold data that is newer than the
+    backing store.
+\end{enumerate}
+
+\textbf{Recommendation:} place all DMA source and destination buffers in
+the Scratchpad address region.
+This eliminates every coherency concern at zero hardware cost.
+
+\subsubsection{DMA Access Classification}
+
+Table~\ref{tab:asDmaCoh} enumerates all source/destination combinations
+and the required CPU action.
+
+\begin{table}[H]
+\caption{DMA Coherency Requirements by Memory Region}
+\label{tab:asDmaCoh}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  DMA source & DMA destination & Coherency issue? & Required CPU action \\
+  \hline
+  \hline
+  Scratchpad & Peripheral & None &
+    None. Scratchpad is uncacheable; DMA reads current data. \\
+  \hline
+  Peripheral & Scratchpad & None &
+    None. CPU reads Scratchpad directly; no cache involved. \\
+  \hline
+  Scratchpad & Scratchpad & None &
+    None. Both ends uncacheable. \\
+  \hline
+  Flash      & Scratchpad & None &
+    None. Flash data in D-Cache always matches Flash (read-only). \\
+  \hline
+  Flash      & Peripheral & None &
+    None. As above. \\
+  \hline
+  Scratchpad & Flash      & N/A  &
+    Flash is read-only hardware; this transfer is not possible. \\
+  \hline
+  Flash      & Flash      & N/A  &
+    Flash is read-only hardware as destination; not possible. \\
+  \hline
+  Peripheral & Flash-mapped cached region\textsuperscript{$\dagger$}
+             & \textbf{Yes} &
+    CPU must issue \texttt{FENCE.I} \emph{after} DMA completes to
+    invalidate stale I-Cache and D-Cache lines. \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\textsuperscript{$\dagger$}Applicable only if a future memory map revision
+introduces a writable RAM region within the cacheable address space
+(e.g.\ an on-chip SRAM shadow of the Flash area).
+In the current architecture this case does not arise.
+
+\subsubsection{Software Protocol}
+
+For the one coherency-relevant scenario (DMA writes to a cacheable region):
+
+\begin{enumerate}
+  \item CPU configures the DMA transfer (source, destination, length,
+    direction) by writing to DMA control registers (peripheral region,
+    uncacheable).
+  \item CPU starts the DMA engine and waits for the DMA-done event
+    (interrupt or polling of a status register).
+  \item CPU issues \texttt{FENCE.I} to invalidate both I-Cache and
+    D-Cache (32 cycles).
+  \item CPU may now fetch instructions from, or load data out of,
+    the DMA-written region; it will see the updated content.
+\end{enumerate}
+
+No hardware handshake between the DMA engine and the cache controllers
+is required.
+The software ordering (wait for DMA done, \emph{then} FENCE.I) is
+sufficient because:
+
+\begin{itemize}
+  \item The DMA engine writes directly to memory (not through any cache).
+  \item FENCE.I invalidates the cache \emph{after} the DMA write is
+    visible in memory.
+  \item The non-pipelined CPU executes FENCE.I atomically with respect
+    to subsequent loads.
+\end{itemize}
+
+\subsubsection{Future DMA Engine Interface Requirements}
+
+When the DMA engine is designed, it must expose at minimum:
+
+\begin{table}[H]
+\caption{Minimum DMA Engine Signals for Cache Coherency}
+\label{tab:asDmaIf}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+  Signal & Type & Purpose \\
+  \hline
+  \hline
+  \texttt{dma\_done\_irq} & out (to CPU) &
+    Interrupt asserted when DMA transfer completes; CPU uses this as the
+    trigger to issue \texttt{FENCE.I} before accessing DMA-written data \\
+  \hline
+  \texttt{dma\_active\_o} & out (to system) &
+    High while a transfer is in progress; optional, used to prevent
+    conflicting CPU accesses to the same address range \\
+  \hline
+\end{tabularx}
+\end{table}
+
+No cache-flush or cache-snoop signal is required from the DMA engine;
+the software protocol (Section above) is sufficient.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Open Items and Refinements}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1437,8 +1573,12 @@ cycles and is de-asserted together with \texttt{*\_flush\_done\_o}.
            No CSR provided. Scratchpad unaffected. No dirty eviction (MEM-01).
            See Section~\ref{subsec:cacheFlush}. & -- \\
   \hline
-  MEM-04 & D-Cache coherency with future DMA engine: define invalidation
-           protocol. & TBD \\
+  MEM-04 & \textbf{[RESOLVED]} Scratchpad is uncacheable; DMA buffers placed
+           there require no cache action.
+           For DMA writes to cacheable regions (future): CPU waits for
+           \texttt{dma\_done\_irq}, then issues \texttt{FENCE.I}.
+           No hardware handshake between DMA and cache controllers required.
+           See Section~\ref{subsec:dmaCoherency}. & -- \\
   \hline
   MEM-05 & Physical address width: 32\,bits chosen (\texttt{PA\_WIDTH=32}).
            With scratchpad and Flash regions both well within a 4\,GB space

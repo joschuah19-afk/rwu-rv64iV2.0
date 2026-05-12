@@ -414,11 +414,12 @@ It is reset to all-zero on power-on reset.
 \subsection{SRAM Macro Organisation}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-Each cache uses two X-Fab SRAM macros: one tag SRAM and one data SRAM.
-Both macros operate as single-port synchronous SRAMs.
+The memory subsystem uses five X-Fab XO035 SPRAM macros in total
+(see Section~\ref{subsec:sramSelection} for the selected instances).
+All macros operate as single-port synchronous SRAMs at 3.3\,V.
 
 \begin{table}[H]
-\caption{SRAM Macro Requirements per Cache}
+\caption{SRAM Macro Logical Requirements}
 \label{tab:asSramMacros}
 \centering
 \begin{tabularx}{\textwidth}{|l |l |l |l |X|}
@@ -426,13 +427,17 @@ Both macros operate as single-port synchronous SRAMs.
   Macro & Width & Depth & Size & Notes \\
   \hline
   \hline
-  Tag SRAM (I) & 96\,bit & 32 & 384\,B & Holds valid + tag for all 4 ways + 3 PLRU bits; rounded from 95 \\
+  Tag SRAM (I)  & 96\,bit  & 32   & 384\,B   & valid + tag for 4 ways + 3 PLRU bits; rounded from 95 \\
   \hline
-  Tag SRAM (D) & 96\,bit  & 32 & 384\,B & Holds valid + tag for all 4 ways + 3 PLRU bits; rounded from 95 (no dirty bit) \\
+  Tag SRAM (D)  & 96\,bit  & 32   & 384\,B   & same structure as I-Cache (no dirty bit); rounded from 95 \\
   \hline
-  Data SRAM (I) & 256\,bit & 128 & 4\,KB & 32 sets $\times$ 4 ways $\times$ 32\,B/line; addressed as \{index,way\} \\
+  Data SRAM (I) & 256\,bit & 128  & 4\,KB    & 32 sets $\times$ 4 ways $\times$ 32\,B; addressed as \texttt{\{index,way\}} \\
   \hline
-  Data SRAM (D) & 256\,bit & 128 & 4\,KB & same organisation as I-Cache data SRAM \\
+  Data SRAM (D) & 256\,bit & 128  & 4\,KB    & same organisation as I-Cache data SRAM \\
+  \hline
+  Scratchpad    & 64\,bit  & \texttt{SP\_DEPTH} & \texttt{SP\_SIZE\_B} &
+    Default: \texttt{SP\_DEPTH=1024} $\Rightarrow$ 8\,KB;
+    addressed by \texttt{dc\_addr\_i[12:3]} \\
   \hline
 \end{tabularx}
 \end{table}
@@ -446,10 +451,154 @@ beat words into the data SRAM on four consecutive cycles using a word-level
 write enable, while the full line address (\texttt{index} $\parallel$
 \texttt{fill\_way}) is held constant.
 
-\textbf{Note:} The specific X-Fab SRAM macro type (cut), including port
-configurations and timing parameters, is to be selected from the X-Fab
-SRAM compiler catalogue and will be documented in a separate SRAM
-specification.
+The Scratchpad SRAM is accessed with a 64-bit data bus and an 8-bit byte
+enable (\texttt{dc\_wstrb\_i}), matching the D-Cache data bus width.
+Its address is derived directly from \texttt{dc\_addr\_i[12:3]} (for the
+default 8\,KB instance).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{SRAM Macro Selection -- XO035 SPRAM}
+\label{subsec:sramSelection}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsubsection{Library and Process}
+
+All SRAM macros are generated with the X-Fab \textbf{XO035}
+(350\,nm Modular Sensor Technology Platform)
+\textbf{SPRAM} (Single-Port RAM) compiler at the nominal supply of
+3.3\,V (2.2\,V low-voltage option not used).
+Key library properties relevant to this design:
+
+\begin{itemize}
+  \item Zero static DC power consumption (only intrinsic leakage).
+  \item Separate input and output data buses (no bus contention during
+    read-modify-write).
+  \item Byte-level write enable supported (required for sub-word stores
+    to the Scratchpad SRAM).
+  \item Wide range of instance sizes; the compiler generates macros for
+    the exact width$\times$depth parameters listed in
+    Table~\ref{tab:asSramInstances}.
+  \item Optional BIST block: \textbf{not instantiated} in the first
+    tapeout; test coverage via scan chain is sufficient.
+\end{itemize}
+
+\subsubsection{Selected Instances}
+
+Table~\ref{tab:asSramInstances} lists the five SPRAM instances to be
+generated from the XO035 compiler.
+Macro names follow the compiler naming convention and are to be confirmed
+against the current catalogue release.
+
+\begin{table}[H]
+\caption{XO035 SPRAM Instances}
+\label{tab:asSramInstances}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |l |l |X|}
+  \hline
+  Instance & Width & Depth & Size & Macro name & Usage \\
+  \hline
+  \hline
+  I-Tag  & 96\,bit  & 32   & 384\,B & \texttt{SPRAM\_96x32}   & I-Cache tag + valid + PLRU \\
+  \hline
+  D-Tag  & 96\,bit  & 32   & 384\,B & \texttt{SPRAM\_96x32}   & D-Cache tag + valid + PLRU \\
+  \hline
+  I-Data & 256\,bit & 128  & 4\,KB  & \texttt{SPRAM\_256x128} & I-Cache data array \\
+  \hline
+  D-Data & 256\,bit & 128  & 4\,KB  & \texttt{SPRAM\_256x128} & D-Cache data array \\
+  \hline
+  SP     & 64\,bit  & 1024 & 8\,KB  & \texttt{SPRAM\_64x1024} & Scratchpad (stack/heap/.data/.bss) \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\textbf{Notes on macro names:}
+The names \texttt{SPRAM\_\{W\}x\{D\}} are placeholders using the pattern
+$\langle$width$\rangle$x$\langle$depth$\rangle$.
+The actual names generated by the XO035 SPRAM compiler must be verified
+against the compiler catalogue and substituted in the netlist and
+floorplan before tapeout.
+I-Tag and D-Tag use the \emph{same} compiled macro; two instances are
+placed.
+I-Data and D-Data likewise share one compiled macro with two instances.
+
+\subsubsection{SRAM Port Mapping}
+
+Table~\ref{tab:asSramPorts} maps the logical cache-controller signals
+to the standard XO035 SPRAM port names.
+
+\begin{table}[H]
+\caption{XO035 SPRAM Port Mapping}
+\label{tab:asSramPorts}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+  SPRAM port & Direction & Connected to \\
+  \hline
+  \hline
+  \texttt{CLK}  & in  & System clock \texttt{clk\_i} \\
+  \hline
+  \texttt{CEN}  & in  & Chip enable, active-low; asserted when cache controller
+                        drives a valid address \\
+  \hline
+  \texttt{WEN}  & in  & Write enable, active-low; low for write, high for read \\
+  \hline
+  \texttt{BWEN} & in  & Bit-write enable, active-low; all-zero = write all bits
+                        (tag/data SRAMs); \texttt{\textasciitilde dc\_wstrb\_i}
+                        expanded to bit-level (Scratchpad only) \\
+  \hline
+  \texttt{A}    & in  & Address bus; see Table~\ref{tab:asSramMacros} for width \\
+  \hline
+  \texttt{D}    & in  & Write data \\
+  \hline
+  \texttt{Q}    & out & Read data; valid one cycle after \texttt{CEN} low on a read \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{Timing Parameters}
+
+Table~\ref{tab:asSramTiming} lists the timing parameters to be extracted
+from the XO035 SPRAM compiler output for the worst-case process corner
+(SS -- slow NMOS, slow PMOS), maximum temperature (125\,\textdegree C),
+and minimum supply voltage (3.0\,V for 3.3\,V nominal).
+
+\begin{table}[H]
+\caption{XO035 SPRAM Timing Parameters (worst-case SS/125\,\textdegree C/3.0\,V)}
+\label{tab:asSramTiming}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Parameter & Symbol & Value & Description \\
+  \hline
+  \hline
+  Clock period (min.) & $t_\text{cyc}$ & TBD\,ns & Minimum clock period for correct operation \\
+  \hline
+  Access time         & $t_\text{aa}$  & TBD\,ns & Address to \texttt{Q} valid; determines read latency \\
+  \hline
+  Setup time (data)   & $t_\text{ds}$  & TBD\,ns & \texttt{D} / \texttt{BWEN} setup before rising \texttt{CLK} \\
+  \hline
+  Hold time (data)    & $t_\text{dh}$  & TBD\,ns & \texttt{D} / \texttt{BWEN} hold after rising \texttt{CLK} \\
+  \hline
+  Setup time (addr.)  & $t_\text{as}$  & TBD\,ns & \texttt{A} / \texttt{CEN} / \texttt{WEN} setup before rising \texttt{CLK} \\
+  \hline
+  Hold time (addr.)   & $t_\text{ah}$  & TBD\,ns & \texttt{A} / \texttt{CEN} / \texttt{WEN} hold after rising \texttt{CLK} \\
+  \hline
+\end{tabularx}
+\end{table}
+
+The system clock frequency must satisfy:
+\[
+  f_\text{clk} \leq \frac{1}{t_\text{cyc,\,worst}}
+\]
+All cache hit paths (tag compare + data SRAM read) must close timing
+within a single clock cycle at the selected frequency.
+Static Timing Analysis (STA) with the compiler-supplied Liberty
+(\texttt{.lib}) file is required before tapeout.
+
+\textbf{Action (MEM-02):} Run the XO035 SPRAM compiler for all five
+instances listed in Table~\ref{tab:asSramInstances} and fill in the
+timing values in Table~\ref{tab:asSramTiming}.
+Verify that the maximum target frequency is achievable at the SS/125\,\textdegree C/3.0\,V corner.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Instruction Cache (I-Cache)}
@@ -1165,9 +1314,12 @@ ARSIZE=3.
            scratchpad is uncacheable (bypass path in D-Cache controller).
            Dirty bit and \texttt{WRITEBACK} state eliminated. & -- \\
   \hline
-  MEM-02 & X-Fab SRAM macro selection: choose specific cut from SRAM compiler
-           catalogue (single-port, width/depth match); document timing
-           derating and hold margins. & TBD \\
+  MEM-02 & \textbf{[IN PROGRESS]} XO035 SPRAM library selected; five instances
+           defined (I-Tag 96$\times$32, D-Tag 96$\times$32, I-Data 256$\times$128,
+           D-Data 256$\times$128, Scratchpad 64$\times$1024).
+           Macro names and timing parameters (Table~\ref{tab:asSramTiming})
+           to be filled after running the SPRAM compiler.
+           See Section~\ref{subsec:sramSelection}. & TBD \\
   \hline
   MEM-03 & Cache flush / invalidate mechanism for software (CSR registers or
            fence.i support): required before mode switches and DMA transfers. & TBD \\

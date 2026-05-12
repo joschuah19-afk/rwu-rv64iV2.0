@@ -1,0 +1,1191 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% 03_arch_memory_concept.tex
+%% Section: Memory Concept
+%% Chapter: Architecture Concepts
+%%
+%% Describes the two-level cache hierarchy (I-Cache / D-Cache),
+%% tag/data array organisation, replacement policy, the CPU-to-Cache
+%% interface, the AXI4 bus between cache controllers and the Memory
+%% Arbiter, and the read path to NOR Flash via QSPI.
+%%
+%% Status: v0.1 -- initial draft, subject to refinement.
+%%
+%% Integration in 00_rwurv64i_all.tex:
+%%   \section{Memory Concept}
+%%   \input{\TEXTarch 03_arch_history_tab07}
+%%   \input{\TEXTarch 03_arch_memory_concept}
+%%
+%% Requires packages: tabularx, booktabs, tikz, float, xcolor, amsmath
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Overview}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+The RWU-RV64I chip uses a Harvard-style split-cache architecture.
+A dedicated \textbf{Instruction Cache (I-Cache)} serves the CPU fetch path,
+and a dedicated \textbf{Data Cache (D-Cache)} serves the load/store path.
+Both caches are 4-way set-associative with a fixed cache-line size of
+32\,bytes.
+
+The backing store for both caches is an off-chip \textbf{NOR Flash} memory
+accessed through the on-chip QSPI controller.
+NOR Flash is read-only from the cache's perspective; accordingly the D-Cache
+operates as a \textbf{read-allocate, no-write-back} cache for the Flash
+address region.
+Cache data is held in two on-chip \textbf{SRAM macros} (X-Fab process),
+one per cache.
+A \textbf{Memory Arbiter} serialises simultaneous miss requests from the two
+cache controllers onto the single AXI4 bus that leads to the QSPI controller.
+
+Read-write data (stack, heap, \texttt{.data}, \texttt{.bss}) resides in a
+dedicated on-chip \textbf{Scratchpad SRAM}.
+The D-Cache controller decodes the physical address of every load/store: if
+the address falls in the Flash region the request is served through the cache;
+if it falls in the Scratchpad region the cache is bypassed and the Scratchpad
+SRAM is accessed directly via a simple synchronous interface.
+Because the scratchpad is uncacheable, dirty evictions from the D-Cache
+can never occur; the dirty bit and the write-back FSM state are therefore
+eliminated.
+
+The on-chip bus between cache controllers and the Memory Arbiter uses a
+subset of the \textbf{AMBA AXI4} protocol with burst support, replacing the
+Wishbone B4 Classic interface used elsewhere in the design.
+This allows a full 32-byte cache-line fill to complete in a single
+four-beat burst transaction instead of eight independent single transfers.
+
+\begin{table}[H]
+\caption{Memory Hierarchy Summary}
+\label{tab:asMemHierarchy}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+  \hline
+  Level & Block & Capacity & Technology & Latency (typical) \\
+  \hline
+  \hline
+  L1-I & I-Cache    & 4\,KB (param.)  & On-chip SRAM macro  & 1 cycle (hit) \\
+  \hline
+  L1-D & D-Cache    & 4\,KB (param.)  & On-chip SRAM macro  & 1 cycle (hit) \\
+  \hline
+  --   & Scratchpad & TBD (param.)    & On-chip SRAM macro  & 1--2 cycles (direct) \\
+  \hline
+  Main & NOR Flash  & device-specific & Off-chip via QSPI   & \(\gg\)10 cycles (miss) \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{System Memory Architecture}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Figure~\ref{fig:asMemArch01} shows the system-level block diagram of the
+memory subsystem.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[x=1cm, y=1cm]
+
+  % CPU box
+  \filldraw[fill=blue!10, draw=black] (3.5,10.5) rectangle (8.5,12);
+  \node[align=center] at (6,11.25) {\textbf{CPU Core}};
+  \node[align=center,font=\small] at (6,10.85) {non-pipelined / 5-stage pipeline};
+
+  % Instruction Bus label
+  \node[font=\small] at (4.0,10.1) {I-Bus};
+  \draw[<->] (4.5,10.5) -- (4.5,9.8);
+
+  % Data Bus label
+  \node[font=\small] at (7.8,10.1) {D-Bus};
+  \draw[<->] (7.5,10.5) -- (7.5,9.8);
+
+  % I-Cache box
+  \filldraw[fill=green!10, draw=black] (1.5,8.5) rectangle (6.5,9.8);
+  \node[align=center] at (3.5,9.35) {\textbf{I-Cache}};
+  \node[align=center,font=\small] at (3.5,8.95) {4-Way SA, 32\,B line, RO};
+
+  % D-Cache box
+  \filldraw[fill=orange!10, draw=black] (6.5,8.5) rectangle (11.5,9.8);
+  \node[align=center] at (9.5,9.35) {\textbf{D-Cache}};
+  \node[align=center,font=\small] at (9.0,8.95) {4-Way SA, 32\,B line, WB+WA};
+
+  % I-SRAM label and arrow
+  \node[font=\small] at (4.5,8.2) {SRAM I/F};
+  \draw[<->] (4.5,8.5) -- (4.5,7.5);
+
+  % D-SRAM label and arrow
+  \node[font=\small] at (8.5,8.2) {SRAM I/F};
+  \draw[<->] (8.5,8.5) -- (8.5,7.5);
+
+  % I-SRAM Macro
+  \filldraw[fill=gray!15, draw=black] (2.5,6.3) rectangle (6.5,7.5);
+  \node[align=center] at (4.5,7.15) {\textbf{I-SRAM Macro}};
+  \node[align=center,font=\small] at (4.5,6.7) {X-Fab SRAM};
+
+  % D-SRAM Macro
+  \filldraw[fill=gray!15, draw=black] (6.5,6.3) rectangle (10.5,7.5);
+  \node[align=center] at (8.5,7.15) {\textbf{D-SRAM Macro}};
+  \node[align=center,font=\small] at (8.5,6.7) {X-Fab SRAM};
+
+  % Scratchpad SRAM Macro (bypass from D-Cache, right side)
+  \filldraw[fill=teal!15, draw=black] (11.5,6.3) rectangle (15.5,7.5);
+  \node[align=center] at (13.5,7.15) {\textbf{Scratchpad SRAM}};
+  \node[align=center,font=\small] at (13.5,6.7) {X-Fab SRAM (TBD size)};
+
+  % Bypass arrow D-Cache -> Scratchpad
+  \node[font=\small] at (12.8,9.1) {bypass};
+  \draw[<->] (11.5,9.15) -- (13.5,9.15) -- (13.5,7.5);
+
+  % AXI4 arrows to arbiter
+  \node[font=\small] at (4.1,5.9) {AXI4 M};
+  \draw[->] (4.5,6.3) -- (4.5,5.5) -- (6.0,5.5);
+  \node[font=\small] at (8.9,5.9) {AXI4 M};
+  \draw[->] (8.5,6.3) -- (8.5,5.5) -- (7.0,5.5);
+
+  % Memory Arbiter
+  \filldraw[fill=yellow!20, draw=black] (5.0,4.5) rectangle (8.0,5.5);
+  \node[align=center] at (6.5,5.0) {\textbf{Memory Arbiter}};
+
+  % Arrow to QSPI
+  \draw[->] (6.5,4.5) -- (6.5,3.8);
+  \node[font=\small] at (7.3,4.15) {AXI4 S};
+
+  % QSPI Controller
+  \filldraw[fill=purple!10, draw=black] (4.5,3.0) rectangle (8.5,3.8);
+  \node[align=center] at (6.5,3.4) {\textbf{QSPI Controller}};
+
+  % Arrow to NOR Flash
+  \draw[->] (6.5,3.0) -- (6.5,2.3);
+  \node[font=\small] at (7.3,2.65) {QSPI};
+
+  % NOR Flash
+  \filldraw[fill=red!10, draw=black] (4.5,1.5) rectangle (8.5,2.3);
+  \node[align=center] at (6.5,1.9) {\textbf{NOR Flash}};
+
+\end{tikzpicture}
+\caption{System Memory Architecture Block Diagram}
+\label{fig:asMemArch01}
+\end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Cache Configuration Parameters}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Both caches share the same structural parameters, listed in
+Table~\ref{tab:asCacheParams}.
+Parameters marked \emph{fixed} are part of the cache-line protocol and
+cannot be changed without redesigning the AXI4 burst transactions and the
+SRAM macros.
+
+\begin{table}[H]
+\caption{Cache Configuration Parameters}
+\label{tab:asCacheParams}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+  \hline
+  Parameter & Symbol & Default & Fixed? & Description \\
+  \hline
+  \hline
+  Cache size          & \texttt{CACHE\_SIZE\_B} & 4096 & no  & Total capacity in bytes per cache \\
+  \hline
+  Associativity       & \texttt{WAYS}           & 4    & yes & Number of ways per set \\
+  \hline
+  Cache-line size     & \texttt{LINE\_BYTES}    & 32   & yes & Bytes per cache line \\
+  \hline
+  Number of sets      & \texttt{SETS}           & 32   & no  & Derived: \texttt{CACHE\_SIZE\_B / (WAYS * LINE\_BYTES)} \\
+  \hline
+  Physical addr width & \texttt{PA\_WIDTH}      & 32   & no  & Physical address bits \\
+  \hline
+  AXI4 data width     & \texttt{AXI\_DW}        & 64   & yes & AXI4 memory bus data width \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Physical Address Decomposition}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+With the default parameters (4\,KB cache, 4-way, 32\,B line, 32-bit
+physical address), a physical address is divided as shown in
+Figure~\ref{fig:asAddrDecomp} and Table~\ref{tab:asAddrFields}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[x=0.55cm, y=0.8cm]
+  % full address bar
+  \draw[thick] (0,0) rectangle (16,1);
+  % tag field [31:10]
+  \filldraw[fill=blue!15, draw=black] (0,0) rectangle (11,1);
+  \node at (5,0.5) {\small Tag [31:10]};
+  \node[font=\tiny] at (11,1.2) {10};
+  \node[font=\tiny] at (0,1.2) {31};
+  % index field [9:5]
+  \filldraw[fill=green!20, draw=black] (11,0) rectangle (13.5,1);
+  \node at (12.2,0.5) {\small Idx [9:5]};
+  \node[font=\tiny] at (13.5,1.2) {5};
+  % offset field [4:0]
+  \filldraw[fill=orange!20, draw=black] (13.5,0) rectangle (16,1);
+  \node at (14.7,0.5) {\small Ofs [4:0]};
+  \node[font=\tiny] at (16,1.2) {0};
+  % bit annotations
+  \node[font=\small] at (5,-0.5) {22 bits};
+  \node[font=\small] at (11.9,-0.5) {5 bits};
+  \node[font=\small] at (14.4,-0.5) {5 bits};
+\end{tikzpicture}
+\caption{Physical Address Decomposition (32-bit PA, 4\,KB cache, 32\,B line)}
+\label{fig:asAddrDecomp}
+\end{figure}
+
+\begin{table}[H]
+\caption{Physical Address Fields}
+\label{tab:asAddrFields}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Field & Bits & Width & Description \\
+  \hline
+  \hline
+  \texttt{tag}    & [31:10] & 22 & Compared against stored tag to determine hit/miss \\
+  \hline
+  \texttt{index}  & [9:5]   & 5  & Selects one of 32 sets \\
+  \hline
+  \texttt{offset} & [4:0]   & 5  & Byte offset within the 32-byte cache line \\
+  \hline
+  \texttt{word}   & [4:3]   & 2  & Selects one of four 64-bit words within the line \\
+  \hline
+  \texttt{instr}  & [4:2]   & 3  & Selects one of eight 32-bit instructions (I-Cache only) \\
+  \hline
+  \texttt{byte}   & [2:0]   & 3  & Byte offset within a 64-bit word (D-Cache sub-word) \\
+  \hline
+\end{tabularx}
+\end{table}
+
+The general formula for derived address parameters is:
+\[
+  \text{OFFSET\_BITS} = \log_2(\texttt{LINE\_BYTES}) = 5
+\]
+\[
+  \text{INDEX\_BITS}  = \log_2(\texttt{SETS}) = \log_2\!\left(\frac{\texttt{CACHE\_SIZE\_B}}{\texttt{WAYS} \times \texttt{LINE\_BYTES}}\right) = 5
+\]
+\[
+  \text{TAG\_BITS} = \texttt{PA\_WIDTH} - \text{INDEX\_BITS} - \text{OFFSET\_BITS} = 32 - 5 - 5 = 22
+\]
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Cache Tag and Metadata Arrays}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Each set contains per-way metadata (valid, tag, and for D-Cache: dirty bit)
+plus shared set-level pseudo-LRU bits.
+
+\subsubsection{I-Cache Metadata Layout}
+
+The I-Cache is read-only; no dirty bit is required.
+
+\begin{table}[H]
+\caption{I-Cache -- Metadata Bits per Set}
+\label{tab:asICacheTag}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Field & Bits & Width & Description \\
+  \hline
+  \hline
+  \multicolumn{4}{|l|}{Per way (repeated 4$\times$):} \\
+  \hline
+  \texttt{valid[w]}  & 1 per way  & 1  & Line present in cache; cleared on reset or flush \\
+  \hline
+  \texttt{tag[w]}    & 22 per way & 22 & Upper address bits stored at fill time \\
+  \hline
+  \multicolumn{4}{|l|}{Per set (shared):} \\
+  \hline
+  \texttt{plru[2:0]} & 3 per set  & 3  & Pseudo-LRU replacement state (see Section~\ref{subsec:plru}) \\
+  \hline
+  \multicolumn{4}{|l|}{Total per set:} \\
+  \hline
+  (sum) & -- & 95 & $4 \times (1+22) + 3 = 95$\,bits; rounded to 96 for SRAM alignment \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{D-Cache Metadata Layout}
+
+The D-Cache is read-allocate with no write-back; no dirty bit is required
+(identical structure to the I-Cache metadata).
+
+\begin{table}[H]
+\caption{D-Cache -- Metadata Bits per Set}
+\label{tab:asDCacheTag}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Field & Bits & Width & Description \\
+  \hline
+  \hline
+  \multicolumn{4}{|l|}{Per way (repeated 4$\times$):} \\
+  \hline
+  \texttt{valid[w]}  & 1 per way  & 1  & Line present in cache; cleared on reset or flush \\
+  \hline
+  \texttt{tag[w]}    & 22 per way & 22 & Tag stored at fill time \\
+  \hline
+  \multicolumn{4}{|l|}{Per set (shared):} \\
+  \hline
+  \texttt{plru[2:0]} & 3 per set  & 3  & Pseudo-LRU replacement state (see Section~\ref{subsec:plru}) \\
+  \hline
+  \multicolumn{4}{|l|}{Total per set:} \\
+  \hline
+  (sum) & -- & 95 & $4 \times (1+22) + 3 = 95$\,bits; rounded to 96 for SRAM alignment \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{Pseudo-LRU Replacement Policy}
+\label{subsec:plru}
+
+A 3-bit pseudo-LRU (PLRU) binary tree approximates LRU replacement for
+4~ways without the overhead of true LRU.
+The tree is shown in Figure~\ref{fig:asPlru} and the bit semantics are
+defined in Table~\ref{tab:asPlruBits}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[x=1.2cm, y=1.2cm]
+  \node[draw, circle, fill=blue!10] (b0) at (3,3) {\small $b_0$};
+  \node[draw, circle, fill=blue!10] (b1) at (1.5,2) {\small $b_1$};
+  \node[draw, circle, fill=blue!10] (b2) at (4.5,2) {\small $b_2$};
+  \node[draw, fill=green!20] (w0) at (0.75,1) {\small W0};
+  \node[draw, fill=green!20] (w1) at (2.25,1) {\small W1};
+  \node[draw, fill=green!20] (w2) at (3.75,1) {\small W2};
+  \node[draw, fill=green!20] (w3) at (5.25,1) {\small W3};
+  \draw (b0) -- node[left,font=\small]{0} (b1);
+  \draw (b0) -- node[right,font=\small]{1} (b2);
+  \draw (b1) -- node[left,font=\small]{0} (w0);
+  \draw (b1) -- node[right,font=\small]{1} (w1);
+  \draw (b2) -- node[left,font=\small]{0} (w2);
+  \draw (b2) -- node[right,font=\small]{1} (w3);
+\end{tikzpicture}
+\caption{Pseudo-LRU Binary Tree for 4 Ways}
+\label{fig:asPlru}
+\end{figure}
+
+\begin{table}[H]
+\caption{PLRU Bit Semantics}
+\label{tab:asPlruBits}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |X|}
+  \hline
+  Bit & Meaning (bit=0) & Meaning (bit=1) \\
+  \hline
+  \hline
+  $b_0$ & Left pair (W0, W1) is LRU; victim from left half & Right pair (W2, W3) is LRU; victim from right half \\
+  \hline
+  $b_1$ & W1 is LRU within left pair; evict W1 & W0 is LRU within left pair; evict W0 \\
+  \hline
+  $b_2$ & W3 is LRU within right pair; evict W3 & W2 is LRU within right pair; evict W2 \\
+  \hline
+\end{tabularx}
+\end{table}
+
+Victim selection and PLRU update rules are defined in Table~\ref{tab:asPlruUpdate}.
+
+\begin{table}[H]
+\caption{PLRU Victim Selection and Update on Cache Access}
+\label{tab:asPlruUpdate}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+  Accessed Way & Victim (for miss/eviction) & PLRU bits updated \\
+  \hline
+  \hline
+  W0 & $b_0$=0: ($b_1$=0~$\Rightarrow$ W1), ($b_1$=1~$\Rightarrow$ W0) & $b_0 \leftarrow 1$,\; $b_1 \leftarrow 1$ \\
+  \hline
+  W1 & same left half & $b_0 \leftarrow 1$,\; $b_1 \leftarrow 0$ \\
+  \hline
+  W2 & $b_0$=1: ($b_2$=0~$\Rightarrow$ W3), ($b_2$=1~$\Rightarrow$ W2) & $b_0 \leftarrow 0$,\; $b_2 \leftarrow 1$ \\
+  \hline
+  W3 & same right half & $b_0 \leftarrow 0$,\; $b_2 \leftarrow 0$ \\
+  \hline
+\end{tabularx}
+\end{table}
+
+The PLRU state is stored in a small register array (32 sets $\times$ 3 bits = 96 bits).
+It is reset to all-zero on power-on reset.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{SRAM Macro Organisation}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+Each cache uses two X-Fab SRAM macros: one tag SRAM and one data SRAM.
+Both macros operate as single-port synchronous SRAMs.
+
+\begin{table}[H]
+\caption{SRAM Macro Requirements per Cache}
+\label{tab:asSramMacros}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+  \hline
+  Macro & Width & Depth & Size & Notes \\
+  \hline
+  \hline
+  Tag SRAM (I) & 96\,bit & 32 & 384\,B & Holds valid + tag for all 4 ways + 3 PLRU bits; rounded from 95 \\
+  \hline
+  Tag SRAM (D) & 96\,bit  & 32 & 384\,B & Holds valid + tag for all 4 ways + 3 PLRU bits; rounded from 95 (no dirty bit) \\
+  \hline
+  Data SRAM (I) & 256\,bit & 128 & 4\,KB & 32 sets $\times$ 4 ways $\times$ 32\,B/line; addressed as \{index,way\} \\
+  \hline
+  Data SRAM (D) & 256\,bit & 128 & 4\,KB & same organisation as I-Cache data SRAM \\
+  \hline
+\end{tabularx}
+\end{table}
+
+The data SRAM is addressed by the concatenation \texttt{\{index[4:0], way[1:0]\}}
+giving a 7-bit address (128 entries).
+All 256 bits of one cache line are read or written in a single SRAM cycle.
+
+During a cache-line fill, the cache controller writes the four 64-bit AXI4
+beat words into the data SRAM on four consecutive cycles using a word-level
+write enable, while the full line address (\texttt{index} $\parallel$
+\texttt{fill\_way}) is held constant.
+
+\textbf{Note:} The specific X-Fab SRAM macro type (cut), including port
+configurations and timing parameters, is to be selected from the X-Fab
+SRAM compiler catalogue and will be documented in a separate SRAM
+specification.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Instruction Cache (I-Cache)}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsubsection{Functional Description}
+
+The I-Cache is a read-only, 4-way set-associative cache that serves the
+CPU instruction fetch stage.
+It has no write path to the backing NOR Flash, and no dirty bit.
+
+On every fetch request the cache controller:
+\begin{enumerate}
+  \item Reads the tag SRAM at address \texttt{index}.
+  \item Compares the four stored tags with the request tag in parallel.
+  \item Checks the corresponding valid bits.
+  \item On a hit: reads the data SRAM at \texttt{\{index, hit\_way\}},
+    selects the 32-bit instruction word using \texttt{offset[4:2]},
+    and returns it to the CPU in the same cycle.
+  \item On a miss: stalls the CPU, issues an AXI4 read burst to the
+    Memory Arbiter, fills the selected SRAM line, updates the tag SRAM and
+    PLRU state, then un-stalls the CPU.
+\end{enumerate}
+
+\subsubsection{Cache Hit Path}
+
+The hit path is combinatorial: tag comparison, data SRAM read, and
+instruction word selection complete within one clock cycle.
+The CPU pipeline sees a zero-cycle miss overhead when the cache hits.
+
+\subsubsection{Cache Miss Handling}
+
+On a miss the I-Cache controller:
+\begin{itemize}
+  \item Uses the PLRU state to select the victim way.
+  \item Asserts the \texttt{stall} signal to the CPU.
+  \item Issues an AXI4 INCR burst of 4 beats (4 $\times$ 64\,bit = 32\,B)
+    aligned to the cache-line boundary (\texttt{addr[63:5] \& 5'b0}).
+  \item Writes the four beats sequentially into the data SRAM.
+  \item Updates the tag and valid bit for the filled way.
+  \item Updates the PLRU bits.
+  \item De-asserts \texttt{stall} on the cycle the last beat arrives.
+\end{itemize}
+
+\subsubsection{I-Cache State Machine}
+\label{subsec:icacheFsm}
+
+\begin{table}[H]
+\caption{I-Cache Controller States}
+\label{tab:asICacheFsm}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |}
+  \hline
+  State & Description \\
+  \hline
+  \hline
+  \texttt{IDLE}      & Waiting for a fetch request from the CPU \\
+  \hline
+  \texttt{LOOKUP}    & Tag comparison active; result available next cycle \\
+  \hline
+  \texttt{MISS}      & AXI4 AR channel: sending read address burst to arbiter \\
+  \hline
+  \texttt{FILL}      & Receiving 4 AXI4 R-channel beats; writing data SRAM \\
+  \hline
+  \texttt{RESPOND}   & First word of filled line presented to CPU; stall de-asserted \\
+  \hline
+\end{tabularx}
+\end{table}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Data Cache (D-Cache)}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsubsection{Functional Description}
+
+The D-Cache is a \textbf{read-allocate} 4-way set-associative cache that
+serves the CPU load/store stage.
+Sub-word accesses (byte, halfword, word, doubleword) are supported.
+
+The D-Cache controller decodes the physical address of every CPU load/store
+and dispatches to one of two paths:
+
+\begin{itemize}
+  \item \textbf{Flash region (cacheable, read-only):} the request goes
+    through the tag-lookup / fill pipeline described below.
+    Stores to the Flash region are not supported; the cache controller
+    asserts an error signal (behaviour TBD, see MEM-06).
+  \item \textbf{Scratchpad region (uncacheable, read-write):} the cache is
+    bypassed entirely.
+    The controller drives the Scratchpad SRAM interface directly with the
+    physical address, write data, byte enables, and read/write strobe, and
+    returns the read data to the CPU after one SRAM cycle.
+\end{itemize}
+
+On a load from the Flash region the cache controller:
+\begin{enumerate}
+  \item Reads the tag SRAM at address \texttt{index}.
+  \item Compares the four stored tags with the request tag in parallel.
+  \item Checks the corresponding valid bits.
+  \item On a read hit: reads the data SRAM, extracts the addressed word or
+    sub-word, and returns it to the CPU in the same cycle.
+  \item On a miss: stalls the CPU, issues an AXI4 read burst to the Memory
+    Arbiter, fills the selected SRAM line, updates tag and valid bit,
+    updates the PLRU state, then un-stalls the CPU.
+\end{enumerate}
+
+\subsubsection{Address Region Policy and Absence of Write-Back}
+
+Because the Flash backing store is read-only and the Scratchpad is
+uncacheable, \textbf{the dirty bit is never set} and no cache line is ever
+marked for write-back.
+As a direct consequence:
+
+\begin{itemize}
+  \item The D-Cache metadata does \textbf{not} contain a dirty bit
+    (contrast with Table~\ref{tab:asDCacheTag}, which is superseded:
+    the dirty field is removed; per-way metadata reduces from
+    $(1+1+22)=24$ to $(1+22)=23$ bits).
+  \item The \texttt{WRITEBACK} FSM state and the full AXI4 write path
+    (AW, W, B channels) are \textbf{eliminated} from the D-Cache
+    controller.
+    The D-Cache requires only the AXI4 read channels (AR, R).
+  \item Write-allocate is \textbf{not applicable}: stores go to the
+    Scratchpad directly; there is no ``write miss'' into the cache.
+\end{itemize}
+
+This simplification resolves open item MEM-01 and reduces D-Cache
+controller complexity significantly.
+
+\subsubsection{D-Cache State Machine}
+\label{subsec:dcacheFsm}
+
+\begin{table}[H]
+\caption{D-Cache Controller States}
+\label{tab:asDCacheFsm}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |}
+  \hline
+  State & Description \\
+  \hline
+  \hline
+  \texttt{IDLE}       & Waiting for a load/store request from the CPU \\
+  \hline
+  \texttt{DECODE}     & Physical address decoded; dispatch to CACHE path (Flash region)
+                        or BYPASS path (Scratchpad region) \\
+  \hline
+  \texttt{LOOKUP}     & Flash region: tag comparison active; result available next cycle \\
+  \hline
+  \texttt{FILL}       & Flash region: issuing AXI4 AR burst; receiving and writing
+                        4 beats to data SRAM \\
+  \hline
+  \texttt{RESPOND}    & Flash region: read data presented to CPU; stall de-asserted \\
+  \hline
+  \texttt{BYPASS}     & Scratchpad region: driving Scratchpad SRAM interface directly;
+                        read data or write acknowledgement returned to CPU after 1 cycle \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\textbf{Note:} The \texttt{WRITEBACK} and \texttt{WRITE\_HIT} states present
+in earlier revisions of this document are removed.
+Neither state can be reached: no dirty lines exist (Flash is read-only) and
+stores bypass the cache via the \texttt{BYPASS} state.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{CPU-to-Cache Interface}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+The interface between the CPU core and each cache uses a simple
+valid/ready + stall handshake.
+It is not based on Wishbone or AXI4: those protocols are reserved for
+the off-chip memory path.
+
+\subsubsection{Instruction Bus (CPU -- I-Cache)}
+\label{subsec:iBusIf}
+
+The Instruction Bus carries instruction fetch requests from the IF stage
+to the I-Cache.
+
+\begin{table}[H]
+\caption{Instruction Bus Interface (\texttt{as\_icache\_if})}
+\label{tab:asIBusIO}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Signal & Dir (CPU) & Width & Description \\
+  \hline
+  \hline
+  \texttt{ic\_addr\_i}  & out & 64 & Instruction fetch address; must be 4-byte aligned \\
+  \hline
+  \texttt{ic\_req\_i}   & out & 1  & Fetch request; held high while the CPU needs an instruction \\
+  \hline
+  \texttt{ic\_stall\_o} & in  & 1  & High while a cache miss is being serviced; CPU must freeze PC \\
+  \hline
+  \texttt{ic\_rdata\_o} & in  & 32 & Instruction word returned by the I-Cache \\
+  \hline
+  \texttt{ic\_rvalid\_o}& in  & 1  & \texttt{ic\_rdata\_o} is valid; asserted one cycle after a hit \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\begin{verbatim}
+interface as_icache_if (input logic clk_i, 
+                        input logic rst_i);
+  logic [63:0] ic_addr;
+  logic        ic_req;
+  logic        ic_stall;
+  logic [31:0] ic_rdata;
+  logic        ic_rvalid;
+  modport cpu  (output ic_addr, ic_req,  
+                input  ic_stall, ic_rdata, ic_rvalid);
+  modport cache(input  ic_addr, ic_req,  
+                output ic_stall, ic_rdata, ic_rvalid);
+endinterface
+\end{verbatim}
+
+\subsubsection{Data Bus (CPU -- D-Cache)}
+\label{subsec:dBusIf}
+
+The Data Bus carries load and store requests from the MEM stage to the
+D-Cache.
+
+\begin{table}[H]
+\caption{Data Bus Interface (\texttt{as\_dcache\_if})}
+\label{tab:asDBusIO}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Signal & Dir (CPU) & Width & Description \\
+  \hline
+  \hline
+  \texttt{dc\_addr\_i}  & out & 64 & Data address \\
+  \hline
+  \texttt{dc\_req\_i}   & out & 1  & Request valid (load or store) \\
+  \hline
+  \texttt{dc\_wr\_i}    & out & 1  & 1 = store, 0 = load \\
+  \hline
+  \texttt{dc\_size\_i}  & out & 3  & Transfer size: 000=byte, 001=half, 010=word, 011=double \\
+  \hline
+  \texttt{dc\_wdata\_i} & out & 64 & Write data from CPU (store) \\
+  \hline
+  \texttt{dc\_wstrb\_i} & out & 8  & Byte enables for store; derived from \texttt{dc\_size\_i} and \texttt{dc\_addr\_i[2:0]} \\
+  \hline
+  \texttt{dc\_stall\_o} & in  & 1  & High while cache miss or write-back is in progress \\
+  \hline
+  \texttt{dc\_rdata\_o} & in  & 64 & Read data returned to CPU (load) \\
+  \hline
+  \texttt{dc\_rvalid\_o}& in  & 1  & \texttt{dc\_rdata\_o} is valid \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\begin{verbatim}
+interface as_dcache_if (input logic clk_i, 
+                        input logic rst_i);
+  logic [63:0] dc_addr;
+  logic        dc_req;
+  logic        dc_wr;
+  logic [2:0]  dc_size;
+  logic [63:0] dc_wdata;
+  logic [7:0]  dc_wstrb;
+  logic        dc_stall;
+  logic [63:0] dc_rdata;
+  logic        dc_rvalid;
+  modport cpu  (output dc_addr, dc_req, dc_wr, dc_size, 
+                       dc_wdata, dc_wstrb,
+                input  dc_stall, dc_rdata, dc_rvalid);
+  modport cache(input  dc_addr, dc_req, dc_wr, dc_size, 
+                       dc_wdata, dc_wstrb,
+                output dc_stall, dc_rdata, dc_rvalid);
+endinterface
+\end{verbatim}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{AXI4 Memory Bus (Cache Controllers to Memory Arbiter)}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsubsection{AXI4 Subset Used}
+
+Both cache controllers use the AMBA AXI4 protocol as masters on the
+memory bus.
+The Memory Arbiter presents a single AXI4 slave port toward the cache
+controllers and a single AXI4 master port toward the QSPI controller.
+Table~\ref{tab:asAxi4Params} lists the AXI4 bus parameters.
+
+\begin{table}[H]
+\caption{AXI4 Memory Bus Parameters}
+\label{tab:asAxi4Params}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+  Parameter & Value & Comment \\
+  \hline
+  \hline
+  Protocol        & AXI4 (not AXI4-Lite)       & Burst support required for cache-line fills \\
+  \hline
+  Data width      & 64\,bit                     & \texttt{AXI\_DW=64}; 4 beats fill a 32\,B cache line \\
+  \hline
+  Address width   & 32\,bit                     & Matches physical address space \\
+  \hline
+  ID width        & 4\,bit                      & Allows up to 16 outstanding transactions; I-Cache uses ID=0x1, D-Cache uses ID=0x2 \\
+  \hline
+  Burst type      & INCR (01)                   & Sequential address increment; no WRAP or FIXED \\
+  \hline
+  Burst length    & ARLEN=3 / AWLEN=3           & 4 beats $\times$ 8\,B = 32\,B per cache line \\
+  \hline
+  Beat size       & ARSIZE=3 (8\,B)             & One 64-bit word per beat \\
+  \hline
+  Outstanding     & 1 per master                & Each cache has at most 1 transaction in flight \\
+  \hline
+  Protection      & ARPROT=3'b000               & Normal non-secure unprivileged \\
+  \hline
+  Cache hints     & ARCACHE=4'b0010             & Normal non-cacheable (device is the QSPI controller) \\
+  \hline
+  Write response  & BRESP checked               & Error on BRESP\,$\neq$\,OKAY is flagged; TBD behaviour \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{AXI4 Channel Signals}
+
+Table~\ref{tab:asAxi4ArCh} through Table~\ref{tab:asAxi4BCh} list the
+signals of each AXI4 channel.
+Signals marked \dag{} are tied to a fixed value; they do not require
+routing logic.
+
+\begin{table}[H]
+\caption{AXI4 AR Channel (Read Address) -- I/D Cache Master}
+\label{tab:asAxi4ArCh}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Signal & Dir & Width & Description \\
+  \hline
+  \hline
+  \texttt{arid}    & M$\to$S & 4  & Transaction ID; I-Cache: 4'h1, D-Cache: 4'h2 \\
+  \hline
+  \texttt{araddr}  & M$\to$S & 32 & Start address of the burst; must be aligned to 32\,B (\texttt{addr[4:0]=0}) \\
+  \hline
+  \texttt{arlen}   & M$\to$S & 8  & Burst length minus one; always 8'h03 (4 beats) \\
+  \hline
+  \texttt{arsize}  & M$\to$S & 3  & Bytes per beat; always 3'b011 (8 bytes) \\
+  \hline
+  \texttt{arburst} & M$\to$S & 2  & Burst type; always 2'b01 (INCR) \\
+  \hline
+  \texttt{arvalid} & M$\to$S & 1  & Address and control information valid \\
+  \hline
+  \texttt{arready} & S$\to$M & 1  & Slave ready to accept address \\
+  \hline
+  \texttt{arprot}\dag  & M$\to$S & 3  & Always 3'b000 \\
+  \hline
+  \texttt{arcache}\dag & M$\to$S & 4  & Always 4'b0010 \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\caption{AXI4 R Channel (Read Data) -- I/D Cache Master}
+\label{tab:asAxi4RCh}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Signal & Dir & Width & Description \\
+  \hline
+  \hline
+  \texttt{rid}    & S$\to$M & 4  & Echo of \texttt{arid}; cache controller checks this matches its pending ID \\
+  \hline
+  \texttt{rdata}  & S$\to$M & 64 & Read data beat; received in natural address order (beat 0 = lowest address) \\
+  \hline
+  \texttt{rresp}  & S$\to$M & 2  & 2'b00 = OKAY; other values indicate an error \\
+  \hline
+  \texttt{rlast}  & S$\to$M & 1  & Asserted on the last beat of the burst (beat 3) \\
+  \hline
+  \texttt{rvalid} & S$\to$M & 1  & Read data and strobes valid \\
+  \hline
+  \texttt{rready} & M$\to$S & 1  & Cache controller ready to receive; held high once a miss is in progress \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\caption{AXI4 AW Channel (Write Address) -- D-Cache Master only}
+\label{tab:asAxi4AwCh}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Signal & Dir & Width & Description \\
+  \hline
+  \hline
+  \texttt{awid}    & M$\to$S & 4  & Always 4'h2 (D-Cache) \\
+  \hline
+  \texttt{awaddr}  & M$\to$S & 32 & Start address of dirty line write-back; 32-byte aligned \\
+  \hline
+  \texttt{awlen}   & M$\to$S & 8  & Always 8'h03 (4 beats) \\
+  \hline
+  \texttt{awsize}  & M$\to$S & 3  & Always 3'b011 (8\,bytes/beat) \\
+  \hline
+  \texttt{awburst} & M$\to$S & 2  & Always 2'b01 (INCR) \\
+  \hline
+  \texttt{awvalid} & M$\to$S & 1  & Write address and control valid \\
+  \hline
+  \texttt{awready} & S$\to$M & 1  & Slave ready to accept write address \\
+  \hline
+  \texttt{awprot}\dag  & M$\to$S & 3 & Always 3'b000 \\
+  \hline
+  \texttt{awcache}\dag & M$\to$S & 4 & Always 4'b0010 \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\caption{AXI4 W Channel (Write Data) -- D-Cache Master only}
+\label{tab:asAxi4WCh}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Signal & Dir & Width & Description \\
+  \hline
+  \hline
+  \texttt{wdata}  & M$\to$S & 64 & One 64-bit beat of the dirty cache line \\
+  \hline
+  \texttt{wstrb}  & M$\to$S & 8  & Always 8'hFF (full 64-bit write per beat) \\
+  \hline
+  \texttt{wlast}  & M$\to$S & 1  & Asserted on beat 3 (last beat) \\
+  \hline
+  \texttt{wvalid} & M$\to$S & 1  & Write data valid \\
+  \hline
+  \texttt{wready} & S$\to$M & 1  & Slave ready to accept write data \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\caption{AXI4 B Channel (Write Response) -- D-Cache Master only}
+\label{tab:asAxi4BCh}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |X|}
+  \hline
+  Signal & Dir & Width & Description \\
+  \hline
+  \hline
+  \texttt{bid}    & S$\to$M & 4 & Echo of \texttt{awid} \\
+  \hline
+  \texttt{bresp}  & S$\to$M & 2 & 2'b00 = OKAY; error handling TBD \\
+  \hline
+  \texttt{bvalid} & S$\to$M & 1 & Write response valid \\
+  \hline
+  \texttt{bready} & M$\to$S & 1 & D-Cache ready to accept response \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\subsubsection{AXI4 SystemVerilog Interface Definition}
+
+\begin{verbatim}
+interface as_axi4_if #(
+  parameter int ADDR_W = 32,
+  parameter int DATA_W = 64,
+  parameter int ID_W   = 4,
+  parameter int STRB_W = DATA_W / 8
+)(
+  input logic clk_i,
+  input logic rst_i
+);
+  // AR channel
+  logic [ID_W-1:0]   arid;    
+  logic [ADDR_W-1:0] araddr;
+  logic [7:0]        arlen;   
+  logic [2:0]        arsize;
+  logic [1:0]        arburst; 
+  logic              arvalid; 
+  logic arready;
+  // R channel
+  logic [ID_W-1:0]   rid;     
+  logic [DATA_W-1:0] rdata;
+  logic [1:0]        rresp;   
+  logic              rlast;
+  logic              rvalid;  
+  logic              rready;
+  // AW channel
+  logic [ID_W-1:0]   awid;    
+  logic [ADDR_W-1:0] awaddr;
+  logic [7:0]        awlen;   
+  logic [2:0]        awsize;
+  logic [1:0]        awburst; 
+  logic              awvalid; 
+  logic awready;
+  // W channel
+  logic [DATA_W-1:0] wdata;   
+  logic [STRB_W-1:0] wstrb;
+  logic              wlast;   
+  logic              wvalid; 
+  logic wready;
+  // B channel
+  logic [ID_W-1:0]   bid;     
+  logic [1:0]        bresp;
+  logic              bvalid;  
+  logic              bready;
+
+  modport master (
+    output arid, araddr, arlen, arsize, arburst, arvalid, 
+           rready, awid, awaddr, awlen, awsize, awburst, 
+           awvalid, wdata, wstrb, wlast, wvalid, bready,
+    input  arready, rid, rdata, rresp, rlast, rvalid,
+           awready, wready, bid, bresp, bvalid
+  );
+  modport slave (
+    input  arid, araddr, arlen, arsize, arburst, arvalid, rready,
+           awid, awaddr, awlen, awsize, awburst, awvalid,
+           wdata, wstrb, wlast, wvalid, bready,
+    output arready, rid, rdata, rresp, rlast, rvalid,
+           awready, wready, bid, bresp, bvalid
+  );
+endinterface
+\end{verbatim}
+
+\subsubsection{Cache-Line Fill Transaction (Read Burst)}
+
+Figure~\ref{fig:asAxi4Fill} shows the timing of a 4-beat INCR read burst
+used for a cache-line fill.
+\texttt{ARLEN=3} encodes 4 beats (AXI4 convention: beats = ARLEN+1).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[x=0.9cm, y=0.55cm]
+  % Clock
+  \draw[thick] (0,11) node[left]{\small CLK}
+    -- ++(0.5,0)
+    foreach \i in {0,...,7}{-- ++(0,1) -- ++(0.5,0) -- ++(0,-1) -- ++(0.5,0)};
+  % ARVALID
+  \draw[thick] (0,9.2) node[left]{\small ARVALID}
+    -- ++(0.5,0) -- ++(0,1) -- ++(1,0) -- ++(0,-1) -- ++(7,0);
+  % ARREADY
+  \draw[thick] (0,7.7) node[left]{\small ARREADY}
+    -- ++(1,0) -- ++(0,1) -- ++(1,0) -- ++(0,-1) -- ++(6,0);
+  % RVALID
+  \draw[thick] (0,6.2) node[left]{\small RVALID}
+    -- ++(2,0) -- ++(0,1) -- ++(4,0) -- ++(0,-1) -- ++(2,0);
+  % RREADY
+  \draw[thick] (0,4.7) node[left]{\small RREADY}
+    -- ++(1.5,0) -- ++(0,1) -- ++(6,0) -- ++(0,-1) -- ++(0.5,0);
+  % RDATA beats
+  \draw[thick] (0,3) node[left]{\small RDATA}
+    -- ++(2,0)
+    -- ++(0,0.5) -- ++(1,0) node[midway,above,font=\tiny]{D[0]}
+    -- ++(0,-0.5) -- ++(0,0.5) -- ++(1,0) node[midway,above,font=\tiny]{D[1]}
+    -- ++(0,-0.5) -- ++(0,0.5) -- ++(1,0) node[midway,above,font=\tiny]{D[2]}
+    -- ++(0,-0.5) -- ++(0,0.5) -- ++(1,0) node[midway,above,font=\tiny]{D[3]}
+    -- ++(0,-0.5) -- ++(2,0);
+  % RLAST
+  \draw[thick] (0,1.5) node[left]{\small RLAST}
+    -- ++(5,0) -- ++(0,1) -- ++(1,0) -- ++(0,-1) -- ++(2,0);
+  % Vertical markers
+  \draw[dashed,gray] (1.5,12) -- (1.5,1.0) node[below,font=\tiny]{AR handshake};
+  \draw[dashed,gray] (2.5,12) -- (2.5,1.0) node[below,font=\tiny]{Beat 0};
+  \draw[dashed,gray] (5.5,12) -- (5.5,1.0) node[below,font=\tiny]{Beat 3 (RLAST)};
+\end{tikzpicture}
+\caption{AXI4 Cache-Line Fill: 4-Beat INCR Read Burst (ARLEN=3)}
+\label{fig:asAxi4Fill}
+\end{figure}
+
+\subsubsection{Cache-Line Write-Back Transaction (Write Burst)}
+
+Figure~\ref{fig:asAxi4Wb} shows the timing of a 4-beat INCR write burst
+for a D-Cache dirty-line write-back.
+The AW and W channels are issued simultaneously.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[x=0.9cm, y=0.55cm]
+  % Clock
+  \draw[thick] (0,12) node[left]{\small CLK}
+    -- ++(0.5,0)
+    foreach \i in {0,...,8}{-- ++(0,1) -- ++(0.5,0) -- ++(0,-1) -- ++(0.5,0)};
+  % AWVALID
+  \draw[thick] (0,10.2) node[left]{\small AWVALID}
+    -- ++(0.5,0) -- ++(0,1) -- ++(1,0) -- ++(0,-1) -- ++(7.5,0);
+  % AWREADY
+  \draw[thick] (0,8.7) node[left]{\small AWREADY}
+    -- ++(1,0) -- ++(0,1) -- ++(1,0) -- ++(0,-1) -- ++(7,0);
+  % WVALID
+  \draw[thick] (0,7.2) node[left]{\small WVALID}
+    -- ++(0.5,0) -- ++(0,1) -- ++(4,0) -- ++(0,-1) -- ++(4.5,0);
+  % WREADY
+  \draw[thick] (0,5.7) node[left]{\small WREADY}
+    -- ++(1,0) -- ++(0,1) -- ++(4,0) -- ++(0,-1) -- ++(4,0);
+  % WDATA beats
+  \draw[thick] (0,4) node[left]{\small WDATA}
+    -- ++(1,0)
+    -- ++(0,0.5) -- ++(1,0) node[midway,above,font=\tiny]{D[0]}
+    -- ++(0,-0.5) -- ++(0,0.5) -- ++(1,0) node[midway,above,font=\tiny]{D[1]}
+    -- ++(0,-0.5) -- ++(0,0.5) -- ++(1,0) node[midway,above,font=\tiny]{D[2]}
+    -- ++(0,-0.5) -- ++(0,0.5) -- ++(1,0) node[midway,above,font=\tiny]{D[3]}
+    -- ++(0,-0.5) -- ++(4,0);
+  % WLAST
+  \draw[thick] (0,2.5) node[left]{\small WLAST}
+    -- ++(4,0) -- ++(0,1) -- ++(1,0) -- ++(0,-1) -- ++(4,0);
+  % BVALID
+  \draw[thick] (0,1) node[left]{\small BVALID}
+    -- ++(5.5,0) -- ++(0,1) -- ++(1,0) -- ++(0,-1) -- ++(2.5,0);
+  % BREADY
+  \draw[thick] (0,-0.3) node[left]{\small BREADY}
+    -- ++(0.5,0) -- ++(0,1) -- ++(7.5,0) -- ++(0,-1) -- ++(1,0);
+  % Markers
+  \draw[dashed,gray] (1.5,13) -- (1.5,-0.8) node[below,font=\tiny]{AW/W start};
+  \draw[dashed,gray] (4.5,13) -- (4.5,-0.8) node[below,font=\tiny]{WLAST};
+  \draw[dashed,gray] (6.0,13) -- (6.0,-0.8) node[below,font=\tiny]{BRESP};
+\end{tikzpicture}
+\caption{AXI4 Cache Write-Back: 4-Beat INCR Write Burst (AWLEN=3)}
+\label{fig:asAxi4Wb}
+\end{figure}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Memory Arbiter}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsubsection{Arbitration Policy}
+
+The Memory Arbiter serialises concurrent AXI4 requests from the I-Cache
+and D-Cache controllers onto the single AXI4 port that drives the QSPI
+controller.
+It implements a \textbf{fixed-priority} scheme with D-Cache having higher
+priority than I-Cache.
+
+The rationale is that D-Cache misses in the MEM stage of the pipeline
+stall the entire pipeline, while I-Cache misses only stall the IF stage
+and can be partially hidden by a deeper instruction buffer in future
+pipeline implementations.
+
+\begin{table}[H]
+\caption{Memory Arbiter Priority}
+\label{tab:asArbPriority}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+  Priority & Master & Notes \\
+  \hline
+  \hline
+  1 (highest) & D-Cache & Data miss / write-back; stalls the entire pipeline \\
+  \hline
+  2           & I-Cache & Instruction miss; stalls IF only \\
+  \hline
+\end{tabularx}
+\end{table}
+
+An active transaction is never interrupted: the arbiter grants the bus to
+one master for the full burst (ARLEN+1 beats or AWLEN+1 beats) before
+switching to the other.
+
+\textbf{Note:} A round-robin policy with equal priority or dynamic priority
+based on stall urgency is a future option.
+
+\subsubsection{Memory Arbiter Interface}
+
+\begin{table}[H]
+\caption{Memory Arbiter Ports}
+\label{tab:asArbPorts}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |X|}
+  \hline
+  Port & Type & Description \\
+  \hline
+  \hline
+  \texttt{icache\_axi4} & AXI4 slave  & AXI4 master port of I-Cache controller \\
+  \hline
+  \texttt{dcache\_axi4} & AXI4 slave  & AXI4 master port of D-Cache controller \\
+  \hline
+  \texttt{qspi\_axi4}   & AXI4 master & AXI4 slave port of QSPI controller \\
+  \hline
+\end{tabularx}
+\end{table}
+
+The arbiter is purely combinatorial (pass-through mux) for AR, R, AW, W,
+and B channels; it adds no pipeline registers.
+ID bits from the selected master are forwarded without modification;
+the QSPI controller sees only one active ID at a time.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{QSPI Controller Interface}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+The QSPI controller presents an AXI4 slave port to the Memory Arbiter.
+From the arbiter's perspective the QSPI controller is a slow memory:
+it may de-assert \texttt{ARREADY} / \texttt{WREADY} for many cycles while
+the QSPI flash transaction completes.
+
+The cache controllers handle this latency transparently because they hold
+\texttt{RREADY} asserted throughout the fill and wait for \texttt{RLAST}
+before returning data to the CPU.
+
+\textbf{Note:} The QSPI controller itself is specified in a separate
+section of this document.
+Its AXI4 slave interface must be compatible with the parameter set in
+Table~\ref{tab:asAxi4Params}.
+In particular it must support INCR bursts of length 4 (ARLEN=3) at
+ARSIZE=3.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Open Items and Refinements}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\begin{table}[H]
+\caption{Open Items -- Memory Concept v0.1}
+\label{tab:asMemOpenItems}
+\centering
+\begin{tabularx}{\textwidth}{|l |X |l|}
+  \hline
+  ID & Description & Owner \\
+  \hline
+  \hline
+  MEM-01 & \textbf{[RESOLVED]} Scratchpad SRAM chosen as read-write region.
+           D-Cache operates as read-allocate only for the Flash address region;
+           scratchpad is uncacheable (bypass path in D-Cache controller).
+           Dirty bit and \texttt{WRITEBACK} state eliminated. & -- \\
+  \hline
+  MEM-02 & X-Fab SRAM macro selection: choose specific cut from SRAM compiler
+           catalogue (single-port, width/depth match); document timing
+           derating and hold margins. & TBD \\
+  \hline
+  MEM-03 & Cache flush / invalidate mechanism for software (CSR registers or
+           fence.i support): required before mode switches and DMA transfers. & TBD \\
+  \hline
+  MEM-04 & D-Cache coherency with future DMA engine: define invalidation
+           protocol. & TBD \\
+  \hline
+  MEM-05 & Physical address width: 32\,bits chosen (\texttt{PA\_WIDTH=32}).
+           With scratchpad and Flash regions both well within a 4\,GB space
+           this is confirmed sufficient; finalise when memory map is defined. & AS: 32\,bits -- ok \\
+  \hline
+  MEM-06 & AXI4 error handling: define CPU-visible trap or interrupt behaviour
+           on RRESP/BRESP\,$\neq$\,OKAY. & TBD \\
+  \hline
+  MEM-07 & QSPI XIP mode vs.\ cache-miss-driven burst: clarify whether the
+           QSPI controller operates in Execute-In-Place (XIP) mode and the
+           cache controller issues normal read bursts, or whether a different
+           command sequence is required per miss. & TBD \\
+  \hline
+\end{tabularx}
+\end{table}

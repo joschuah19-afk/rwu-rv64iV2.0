@@ -655,7 +655,7 @@ On a miss the I-Cache controller:
   State & Description \\
   \hline
   \hline
-  \texttt{IDLE}      & Waiting for a fetch request from the CPU \\
+  \texttt{IDLE}      & Waiting for a fetch request or flush signal from the CPU \\
   \hline
   \texttt{LOOKUP}    & Tag comparison active; result available next cycle \\
   \hline
@@ -664,6 +664,10 @@ On a miss the I-Cache controller:
   \texttt{FILL}      & Receiving 4 AXI4 R-channel beats; writing data SRAM \\
   \hline
   \texttt{RESPOND}   & First word of filled line presented to CPU; stall de-asserted \\
+  \hline
+  \texttt{FLUSH}     & Invalidation: iterates set counter 0\ldots31; writes
+                       \texttt{valid=0}, \texttt{plru=0} to tag SRAM each cycle;
+                       asserts \texttt{ic\_flush\_done\_o} after 32 cycles \\
   \hline
 \end{tabularx}
 \end{table}
@@ -740,7 +744,7 @@ controller complexity significantly.
   State & Description \\
   \hline
   \hline
-  \texttt{IDLE}       & Waiting for a load/store request from the CPU \\
+  \texttt{IDLE}       & Waiting for a load/store request or flush signal from the CPU \\
   \hline
   \texttt{DECODE}     & Physical address decoded; dispatch to CACHE path (Flash region)
                         or BYPASS path (Scratchpad region) \\
@@ -754,6 +758,10 @@ controller complexity significantly.
   \hline
   \texttt{BYPASS}     & Scratchpad region: driving Scratchpad SRAM interface directly;
                         read data or write acknowledgement returned to CPU after 1 cycle \\
+  \hline
+  \texttt{FLUSH}      & Invalidation: iterates set counter 0\ldots31; writes
+                        \texttt{valid=0}, \texttt{plru=0} to tag SRAM each cycle;
+                        asserts \texttt{dc\_flush\_done\_o} after 32 cycles \\
   \hline
 \end{tabularx}
 \end{table}
@@ -787,31 +795,37 @@ to the I-Cache.
   Signal & Dir (CPU) & Width & Description \\
   \hline
   \hline
-  \texttt{ic\_addr\_i}  & out & 64 & Instruction fetch address; must be 4-byte aligned \\
+  \texttt{ic\_addr\_i}       & out & 64 & Instruction fetch address; must be 4-byte aligned \\
   \hline
-  \texttt{ic\_req\_i}   & out & 1  & Fetch request; held high while the CPU needs an instruction \\
+  \texttt{ic\_req\_i}        & out & 1  & Fetch request; held high while the CPU needs an instruction \\
   \hline
-  \texttt{ic\_stall\_o} & in  & 1  & High while a cache miss is being serviced; CPU must freeze PC \\
+  \texttt{ic\_flush\_i}      & out & 1  & Pulse high for one cycle to trigger full cache invalidation (FENCE.I) \\
   \hline
-  \texttt{ic\_rdata\_o} & in  & 32 & Instruction word returned by the I-Cache \\
+  \texttt{ic\_stall\_o}      & in  & 1  & High while a cache miss or flush is in progress; CPU must freeze PC \\
   \hline
-  \texttt{ic\_rvalid\_o}& in  & 1  & \texttt{ic\_rdata\_o} is valid; asserted one cycle after a hit \\
+  \texttt{ic\_flush\_done\_o}& in  & 1  & Pulsed high for one cycle when flush is complete \\
+  \hline
+  \texttt{ic\_rdata\_o}      & in  & 32 & Instruction word returned by the I-Cache \\
+  \hline
+  \texttt{ic\_rvalid\_o}     & in  & 1  & \texttt{ic\_rdata\_o} is valid; asserted one cycle after a hit \\
   \hline
 \end{tabularx}
 \end{table}
 
 \begin{verbatim}
-interface as_icache_if (input logic clk_i, 
+interface as_icache_if (input logic clk_i,
                         input logic rst_i);
   logic [63:0] ic_addr;
   logic        ic_req;
+  logic        ic_flush;
   logic        ic_stall;
+  logic        ic_flush_done;
   logic [31:0] ic_rdata;
   logic        ic_rvalid;
-  modport cpu  (output ic_addr, ic_req,  
-                input  ic_stall, ic_rdata, ic_rvalid);
-  modport cache(input  ic_addr, ic_req,  
-                output ic_stall, ic_rdata, ic_rvalid);
+  modport cpu  (output ic_addr, ic_req, ic_flush,
+                input  ic_stall, ic_flush_done, ic_rdata, ic_rvalid);
+  modport cache(input  ic_addr, ic_req, ic_flush,
+                output ic_stall, ic_flush_done, ic_rdata, ic_rvalid);
 endinterface
 \end{verbatim}
 
@@ -830,29 +844,33 @@ D-Cache.
   Signal & Dir (CPU) & Width & Description \\
   \hline
   \hline
-  \texttt{dc\_addr\_i}  & out & 64 & Data address \\
+  \texttt{dc\_addr\_i}       & out & 64 & Data address \\
   \hline
-  \texttt{dc\_req\_i}   & out & 1  & Request valid (load or store) \\
+  \texttt{dc\_req\_i}        & out & 1  & Request valid (load or store) \\
   \hline
-  \texttt{dc\_wr\_i}    & out & 1  & 1 = store, 0 = load \\
+  \texttt{dc\_wr\_i}         & out & 1  & 1 = store, 0 = load \\
   \hline
-  \texttt{dc\_size\_i}  & out & 3  & Transfer size: 000=byte, 001=half, 010=word, 011=double \\
+  \texttt{dc\_size\_i}       & out & 3  & Transfer size: 000=byte, 001=half, 010=word, 011=double \\
   \hline
-  \texttt{dc\_wdata\_i} & out & 64 & Write data from CPU (store) \\
+  \texttt{dc\_wdata\_i}      & out & 64 & Write data from CPU (store) \\
   \hline
-  \texttt{dc\_wstrb\_i} & out & 8  & Byte enables for store; derived from \texttt{dc\_size\_i} and \texttt{dc\_addr\_i[2:0]} \\
+  \texttt{dc\_wstrb\_i}      & out & 8  & Byte enables for store; derived from \texttt{dc\_size\_i} and \texttt{dc\_addr\_i[2:0]} \\
   \hline
-  \texttt{dc\_stall\_o} & in  & 1  & High while cache miss or write-back is in progress \\
+  \texttt{dc\_flush\_i}      & out & 1  & Pulse high for one cycle to trigger full D-Cache invalidation (FENCE.I) \\
   \hline
-  \texttt{dc\_rdata\_o} & in  & 64 & Read data returned to CPU (load) \\
+  \texttt{dc\_stall\_o}      & in  & 1  & High while cache miss, scratchpad access, or flush is in progress \\
   \hline
-  \texttt{dc\_rvalid\_o}& in  & 1  & \texttt{dc\_rdata\_o} is valid \\
+  \texttt{dc\_flush\_done\_o}& in  & 1  & Pulsed high for one cycle when flush is complete \\
+  \hline
+  \texttt{dc\_rdata\_o}      & in  & 64 & Read data returned to CPU (load) \\
+  \hline
+  \texttt{dc\_rvalid\_o}     & in  & 1  & \texttt{dc\_rdata\_o} is valid \\
   \hline
 \end{tabularx}
 \end{table}
 
 \begin{verbatim}
-interface as_dcache_if (input logic clk_i, 
+interface as_dcache_if (input logic clk_i,
                         input logic rst_i);
   logic [63:0] dc_addr;
   logic        dc_req;
@@ -860,15 +878,17 @@ interface as_dcache_if (input logic clk_i,
   logic [2:0]  dc_size;
   logic [63:0] dc_wdata;
   logic [7:0]  dc_wstrb;
+  logic        dc_flush;
   logic        dc_stall;
+  logic        dc_flush_done;
   logic [63:0] dc_rdata;
   logic        dc_rvalid;
-  modport cpu  (output dc_addr, dc_req, dc_wr, dc_size, 
-                       dc_wdata, dc_wstrb,
-                input  dc_stall, dc_rdata, dc_rvalid);
-  modport cache(input  dc_addr, dc_req, dc_wr, dc_size, 
-                       dc_wdata, dc_wstrb,
-                output dc_stall, dc_rdata, dc_rvalid);
+  modport cpu  (output dc_addr, dc_req, dc_wr, dc_size,
+                       dc_wdata, dc_wstrb, dc_flush,
+                input  dc_stall, dc_flush_done, dc_rdata, dc_rvalid);
+  modport cache(input  dc_addr, dc_req, dc_wr, dc_size,
+                       dc_wdata, dc_wstrb, dc_flush,
+                output dc_stall, dc_flush_done, dc_rdata, dc_rvalid);
 endinterface
 \end{verbatim}
 
@@ -1297,6 +1317,97 @@ In particular it must support INCR bursts of length 4 (ARLEN=3) at
 ARSIZE=3.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\subsection{Cache Flush and Invalidation -- FENCE.I}
+\label{subsec:cacheFlush}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\subsubsection{Overview}
+
+A cache flush invalidates all lines in a cache so that subsequent accesses
+reload data from the backing store.
+In the RWU-RV64I memory architecture, both I-Cache and D-Cache are
+\textbf{read-allocate with no write-back}; a flush therefore consists
+solely of clearing all \texttt{valid} bits and all PLRU bits in the tag
+SRAM.
+No dirty eviction is required (MEM-01 resolved).
+
+\subsubsection{Trigger Mechanism}
+
+The flush is triggered by the \textbf{FENCE.I} instruction
+(RISC-V Zifencei extension, encoding \texttt{0x0000100F}).
+When the instruction decoder recognises FENCE.I it:
+
+\begin{enumerate}
+  \item Stalls the CPU pipeline.
+  \item Pulses \texttt{ic\_flush\_i} and \texttt{dc\_flush\_i} high for
+    one clock cycle.
+  \item Waits until both \texttt{ic\_flush\_done\_o} and
+    \texttt{dc\_flush\_done\_o} are asserted.
+  \item Releases the stall and advances the PC to PC$+4$.
+\end{enumerate}
+
+Both caches execute their \texttt{FLUSH} state machines in parallel;
+the total stall duration is therefore \textbf{32 clock cycles}
+(one write per set, 32 sets).
+In a non-pipelined CPU both caches are idle when FENCE.I is decoded,
+so no in-flight transaction needs to be drained.
+
+\textbf{No CSR is provided} for cache control; FENCE.I is the sole
+software-visible mechanism.
+Scratchpad SRAM is not a cache and has no valid bits; it is unaffected
+by FENCE.I.
+
+\subsubsection{Flush State Machine}
+
+Both the I-Cache and D-Cache controllers implement an identical
+\texttt{FLUSH} state entered when \texttt{*\_flush\_i} is sampled high
+in \texttt{IDLE}:
+
+\begin{table}[H]
+\caption{FLUSH State -- Operation per Clock Cycle}
+\label{tab:asFlushFsm}
+\centering
+\begin{tabularx}{\textwidth}{|l |X|}
+  \hline
+  Cycle & Action \\
+  \hline
+  \hline
+  0\ldots30 & Write \texttt{valid[3:0]=4'b0000}, \texttt{plru[2:0]=3'b000}
+              to tag SRAM at address \texttt{flush\_cnt[4:0]}; increment
+              \texttt{flush\_cnt} \\
+  \hline
+  31        & Same write for set 31; assert \texttt{*\_flush\_done\_o} for
+              one cycle; return to \texttt{IDLE} \\
+  \hline
+\end{tabularx}
+\end{table}
+
+The 5-bit counter \texttt{flush\_cnt} is implemented inside each cache
+controller and is reset to zero on entry to \texttt{FLUSH}.
+The \texttt{*\_stall\_o} signal remains asserted throughout the 32
+cycles and is de-asserted together with \texttt{*\_flush\_done\_o}.
+
+\subsubsection{Software Usage Guidelines}
+
+\begin{itemize}
+  \item \textbf{Self-modifying code:} not supported.
+    All executable code must reside in NOR Flash; the scratchpad is
+    data-only.
+    FENCE.I is therefore not required for normal program flow.
+  \item \textbf{DMA transfers:} if a future DMA engine writes to the
+    Flash address region (e.g.\ via a shadow RAM or XIP staging area),
+    the CPU must issue FENCE.I after the DMA completes and before
+    executing any updated code.
+    See MEM-04 for the coherency protocol.
+  \item \textbf{Power-on reset:} both caches initialise with all valid
+    bits cleared (reset value of tag SRAM flip-flops); no software flush
+    is required at boot.
+  \item \textbf{Flush latency:} 32 cycles.
+    At a hypothetical 10\,MHz clock (100\,ns cycle) this is 3.2\,\textmu s
+    -- negligible for all expected use cases.
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 \subsection{Open Items and Refinements}
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1321,8 +1432,10 @@ ARSIZE=3.
            to be filled after running the SPRAM compiler.
            See Section~\ref{subsec:sramSelection}. & TBD \\
   \hline
-  MEM-03 & Cache flush / invalidate mechanism for software (CSR registers or
-           fence.i support): required before mode switches and DMA transfers. & TBD \\
+  MEM-03 & \textbf{[RESOLVED]} FENCE.I (Zifencei, opcode \texttt{0x0000100F})
+           triggers full invalidation of both I-Cache and D-Cache in 32 cycles.
+           No CSR provided. Scratchpad unaffected. No dirty eviction (MEM-01).
+           See Section~\ref{subsec:cacheFlush}. & -- \\
   \hline
   MEM-04 & D-Cache coherency with future DMA engine: define invalidation
            protocol. & TBD \\

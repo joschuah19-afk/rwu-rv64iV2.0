@@ -1,0 +1,67 @@
+# ip_memarb – AXI4 Memory Arbiter
+
+## Verzeichnisstruktur
+
+    ip_memarb/
+    ├── src/asMemArb.sv        DUT: Fixed-Priority-Arbiter (D-Cache > I-Cache)
+    ├── tb/tb_asMemArb.sv      Testbench (TC01–TC06, 23 Checks)
+    ├── sim/sim_main.cpp       Verilator C++ Driver (FST-Trace)
+    └── CMakeLists.txt         Build-System (Verilator only)
+
+Abhängigkeit: `as_pack.sv` (Interfaces as_axi4_if usw.) wird aus
+`../RWU_RV/RV_NoPipeline/src/as_pack.sv` eingebunden.
+
+## Simulation starten
+
+Alle Befehle werden im Verzeichnis `ip_memarb/` ausgeführt.
+
+### Einmalig: Build-Verzeichnis erzeugen
+
+    rm -rf build
+    cmake -S . -B build
+
+### Variante 1 – Nur Simulation (Regression, kein Waveform)
+
+    cmake --build build --target simulate
+
+Ausgabe auf stdout:
+    === tb_asMemArb start ===
+    TC01 ... TC06 ...
+    PASS: all 23 checks passed.
+
+### Variante 2 – Simulation + GTKWave
+
+    cmake --build build --target waves
+
+Startet erst die Simulation, öffnet dann GTKWave mit `dump_memArb.fst`.
+
+### Variante 3 – Nur Verilieren / Kompilieren (kein Run)
+
+    cmake --build build --target verilate
+
+Erzeugt das Verilator-Binary `build/obj_dir/Vtb_asMemArb`, ohne es auszuführen.
+
+## Waveform-Datei
+
+Die FST-Datei `dump_memArb.fst` wird bei jedem Simulation-Run im aktuellen
+Arbeitsverzeichnis (in der Regel `ip_memarb/`) erzeugt bzw. überschrieben.
+Manuell öffnen:
+
+    gtkwave dump_memArb.fst
+
+## Komplette Sequenz (Clean Build + Run)
+
+    rm -rf build
+    cmake -S . -B build
+    cmake --build build --target simulate
+
+## Testfälle (tb_asMemArb.sv)
+
+| TC  | Beschreibung                                              |
+|-----|-----------------------------------------------------------|
+| TC01 | I-Cache single read burst, QSPI sofort bereit           |
+| TC02 | D-Cache single read burst, QSPI sofort bereit           |
+| TC03 | Simultane D+I-Anfrage: D-Cache gewinnt, danach I-Cache  |
+| TC04 | D-Cache read, QSPI staut arready für 3 Zyklen           |
+| TC05 | Back-to-back D-Cache Bursts (direkt nach RLAST)         |
+| TC06 | I-Cache read mit 1-Zyklus-Stall, D-Cache bleibt geblockt|

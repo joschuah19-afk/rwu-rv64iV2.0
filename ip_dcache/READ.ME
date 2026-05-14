@@ -1,0 +1,101 @@
+# ip_dcache – 4-Way Set-Associative Data Cache (Write-Back / Write-Allocate)
+
+## Verzeichnisstruktur
+
+    ip_dcache/
+    ├── src/asDCache.sv        DUT: 4-Way SA D-Cache (SETS=32, LINE=32 B, AXI4 64-Bit)
+    ├── tb/tb_asDCache.sv      Testbench (TC01–TC11, 28 Checks)
+    ├── sim/sim_main.cpp       Verilator C++ Driver (FST-Trace)
+    └── CMakeLists.txt         Build-System (Verilator only)
+
+Abhängigkeit: `as_pack.sv` (Interfaces as_axi4_if, as_dcache_if usw.) wird aus
+`../RWU_RV/RV_NoPipeline/src/as_pack.sv` eingebunden.
+
+## Simulation starten
+
+Alle Befehle werden im Verzeichnis `ip_dcache/` ausgeführt.
+
+### Einmalig: Build-Verzeichnis erzeugen
+
+    rm -rf build
+    cmake -S . -B build
+
+### Variante 1 – Nur Simulation (Regression, kein Waveform)
+
+    cmake --build build --target simulate
+
+Ausgabe auf stdout:
+    === tb_asDCache start ===
+    TC01 ... TC11 ...
+    PASS: all 28 checks passed.
+
+### Variante 2 – Simulation + GTKWave
+
+    cmake --build build --target waves
+
+Startet erst die Simulation, öffnet dann GTKWave mit `dump_dcache.fst`.
+
+### Variante 3 – Nur Verilieren / Kompilieren (kein Run)
+
+    cmake --build build --target verilate
+
+Erzeugt das Verilator-Binary `build/obj_dir/Vtb_asDCache`, ohne es auszuführen.
+
+## Waveform-Datei
+
+Die FST-Datei `dump_dcache.fst` wird bei jedem Simulation-Run im
+Build-Verzeichnis (`build/`) erzeugt bzw. überschrieben.
+Manuell öffnen:
+
+    gtkwave build/dump_dcache.fst
+
+## Komplette Sequenz (Clean Build + Run)
+
+    rm -rf build
+    cmake -S . -B build
+    cmake --build build --target simulate
+
+## Cache-Konfiguration (asDCache.sv Parameter)
+
+| Parameter      | Default | Bedeutung                        |
+|----------------|---------|----------------------------------|
+| CACHE_SIZE_B   | 4096    | Gesamt-Cache-Größe in Byte       |
+| WAYS           | 4       | Anzahl Ways (Set-Assoziativität) |
+| LINE_BYTES     | 32      | Cache-Line-Größe in Byte         |
+| PA_WIDTH       | 32      | Physikalische Adressbreite       |
+| AXI_DW         | 64      | AXI4 Datenbreite (Bit)           |
+
+Abgeleitete Werte: SETS=32, TAG=22 Bit, INDEX=5 Bit, OFFSET=5 Bit, 4 Beats/Burst.
+
+## CPU-Interface (as_dcache_if)
+
+| Signal          | Richtung     | Bedeutung                                   |
+|-----------------|--------------|---------------------------------------------|
+| dc_addr[63:0]   | CPU→Cache    | Byte-Adresse                                |
+| dc_req          | CPU→Cache    | Anforderungs-Puls (1 Takt)                  |
+| dc_wr           | CPU→Cache    | 1 = Schreiben, 0 = Lesen                    |
+| dc_size[2:0]    | CPU→Cache    | RISC-V func3 (lb/lh/lw/ld/lbu/lhu/lwu)     |
+| dc_wdata[63:0]  | CPU→Cache    | Schreibdaten (byte-positioniert)            |
+| dc_wstrb[7:0]   | CPU→Cache    | Byte-Enables                                |
+| dc_flush        | CPU→Cache    | Flush-Puls (write-back + invalidate all)    |
+| dc_stall        | Cache→CPU    | 1 = Cache belegt (Pipeline-Stall)           |
+| dc_rvalid       | Cache→CPU    | Lesedaten gültig (1-Takt-Puls)              |
+| dc_rdata[63:0]  | Cache→CPU    | Lesedaten (sign/zero-extended per dc_size)  |
+| dc_flush_done   | Cache→CPU    | Flush abgeschlossen (1-Takt-Puls)           |
+| dc_err          | Cache→CPU    | AXI4-Fehler (1-Takt-Puls)                  |
+
+## Testfälle (tb_asDCache.sv)
+
+| TC   | Beschreibung                                                             |
+|------|--------------------------------------------------------------------------|
+| TC01 | Cold read miss (ld): AXI4 Burst-Fetch, korrekte rdata                   |
+| TC02 | Read hit (ld): gleiche Adresse, kein AXI4-Transfer                      |
+| TC03 | Read hit (lw): Wort an Offset 4 in gleicher Cache-Line                  |
+| TC04 | Write hit (sw): Byte-Enable-Merge, Cache dirty                          |
+| TC05 | Read after write: merged dirty value korrekt                            |
+| TC06 | Write miss / write-allocate: Fill + Merge, kein Write-Back              |
+| TC07 | Read after write-allocate: merged value korrekt (lw sign-extend)        |
+| TC08 | Dirty eviction: 5. Tag in Set 0 → Write-Back von Way 0 + Fill          |
+| TC09 | Flush: alle dirty Lines write-back, Re-Fetch triggert Miss              |
+| TC10 | AXI4 Read Error (RRESP SLVERR): dc_err Puls, kein rvalid               |
+| TC11 | AXI4 Write Error (BRESP SLVERR) bei Eviction: dc_err Puls              |

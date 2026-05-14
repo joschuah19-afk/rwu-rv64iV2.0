@@ -108,9 +108,11 @@ module as_top_mem (input logic                       clk_i,
 
   logic				  dr_cap_s;
   logic				  clk_div_s;
-  
-  
-  
+
+  // Cache interfaces (disabled – CPU ties all outputs to 0 until asMemTop is wired)
+  as_icache_if icpu_if_s (.clk_i(clk_div_s), .rst_i(rst_i));
+  as_dcache_if dcpu_if_s (.clk_i(clk_div_s), .rst_i(rst_i));
+
   assign cs_o        = asGpioCs_s;
 
   //--------------------------------------------
@@ -199,20 +201,23 @@ module as_top_mem (input logic                       clk_i,
               .tck_i(tck_i),
               .ir_o(ir_s),
               .dr_cap_i(dr_cap_s),
-	       // scan path
+               // scan path
               .sc01_tdo_o(sc01_tdo_s),
               .sc01_tdi_i(sc01_tdi_s),
               .sc01_shift_i(sc01_shift_s),
               .sc01_clock_i(sc01_clock_s),
-	       // instruction bus
+               // instruction bus (legacy flat BPI)
               .iBusAddr_o(iBusAddr3_s),
               .iBusDataRd_i(iBusDataRd3_s),
-	       // data bus
+               // data bus (legacy flat BPI)
               .dBusAddr_o(dBusAddr3_s),
               .dBusDataWr_o(dBusDataWr3_s),
               .dBusDataRd_i(dBusDataRd3_s),
               .dBusWe_o(dMemWr3_s),
-	       // IRQ
+               // cache interfaces (disabled until asMemTop is wired)
+              .icpu_if(icpu_if_s),
+              .dcpu_if(dcpu_if_s),
+               // IRQ
               .irq_ext_i(irq_external_s)
              );
 

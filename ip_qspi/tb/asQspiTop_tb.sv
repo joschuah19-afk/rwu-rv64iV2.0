@@ -28,7 +28,10 @@ module asQspiTop_tb;
   logic              wbdWe_i, wbdStb_i, wbdAck_o, wbdCyc_i;
   logic [wbdSel-1:0] wbdSel_i;
 
-  // ── AXI4 slave port signals ────────────────────────────────────────────────
+  // ── AXI4 interface (master side driven by TB, slave side driven by DUT) ───
+  as_axi4_if #(.ADDR_W(32)) axi4_if (.clk_i(clk_i), .rst_i(rst_i));
+
+  // Flat signals kept for backward-compatible task code; bridged to interface.
   logic        axi_arvalid, axi_arready;
   logic [3:0]  axi_arid;
   logic [31:0] axi_araddr;
@@ -40,6 +43,29 @@ module asQspiTop_tb;
   logic [63:0] axi_rdata;
   logic [1:0]  axi_rresp;
   logic        axi_rlast;
+
+  // TB → interface (master direction: AR + R-ready; no write channel)
+  assign axi4_if.arvalid = axi_arvalid;
+  assign axi4_if.arid    = {axi_arid};
+  assign axi4_if.araddr  = axi_araddr;
+  assign axi4_if.arlen   = {4'b0, axi_arlen};
+  assign axi4_if.arsize  = axi_arsize;
+  assign axi4_if.arburst = axi_arburst;
+  assign axi4_if.rready  = axi_rready;
+  assign axi4_if.awvalid = 1'b0;  assign axi4_if.awid   = '0;
+  assign axi4_if.awaddr  = '0;    assign axi4_if.awlen  = '0;
+  assign axi4_if.awsize  = '0;    assign axi4_if.awburst= '0;
+  assign axi4_if.wdata   = '0;    assign axi4_if.wstrb  = '0;
+  assign axi4_if.wlast   = 1'b0;  assign axi4_if.wvalid = 1'b0;
+  assign axi4_if.bready  = 1'b0;
+
+  // Interface → TB (slave direction: AR-ready + R channel)
+  assign axi_arready = axi4_if.arready;
+  assign axi_rvalid  = axi4_if.rvalid;
+  assign axi_rid     = axi4_if.rid[3:0];
+  assign axi_rdata   = axi4_if.rdata;
+  assign axi_rresp   = axi4_if.rresp;
+  assign axi_rlast   = axi4_if.rlast;
 
   // ── SPI / Flash ────────────────────────────────────────────────────────────
   logic sck_o, cs_o, qspi_irq_o;
@@ -56,13 +82,7 @@ module asQspiTop_tb;
     .wbdWe_i(wbdWe_i), .wbdSel_i(wbdSel_i), .wbdStb_i(wbdStb_i),
     .wbdAck_o(wbdAck_o), .wbdCyc_i(wbdCyc_i),
     // AXI4
-    .axi_s_arvalid_i(axi_arvalid), .axi_s_arready_o(axi_arready),
-    .axi_s_arid_i   (axi_arid),    .axi_s_araddr_i  (axi_araddr),
-    .axi_s_arlen_i  (axi_arlen),   .axi_s_arsize_i  (axi_arsize),
-    .axi_s_arburst_i(axi_arburst),
-    .axi_s_rvalid_o (axi_rvalid),  .axi_s_rready_i  (axi_rready),
-    .axi_s_rid_o    (axi_rid),     .axi_s_rdata_o   (axi_rdata),
-    .axi_s_rresp_o  (axi_rresp),   .axi_s_rlast_o   (axi_rlast),
+    .axi4_if(axi4_if),
     // SPI
     .sck_o(sck_o), .cs_o(cs_o), .data_io(data_io), .qspi_irq_o(qspi_irq_o)
   );

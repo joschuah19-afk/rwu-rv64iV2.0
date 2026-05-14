@@ -60,23 +60,10 @@ module as_qspi_top #(
   output logic                       wbdAck_o,
   input  logic                       wbdCyc_i,
   // -------------------------------------------------------------------------
-  // AXI4 slave port (cache-refill data, read-only: AR + R channels only)
+  // AXI4 slave port (cache-refill data, read-only: AR + R channels)
+  // AW / W / B channels present in interface but not used; tied to safe idle.
   // -------------------------------------------------------------------------
-  // AR channel
-  input  logic        axi_s_arvalid_i,
-  output logic        axi_s_arready_o,
-  input  logic [3:0]  axi_s_arid_i,
-  input  logic [31:0] axi_s_araddr_i,
-  input  logic [3:0]  axi_s_arlen_i,    // expected: 3 (4 beats)
-  input  logic [2:0]  axi_s_arsize_i,   // expected: 3 (8 B/beat)
-  input  logic [1:0]  axi_s_arburst_i,  // expected: INCR = 2'b01
-  // R channel
-  output logic        axi_s_rvalid_o,
-  input  logic        axi_s_rready_i,
-  output logic [3:0]  axi_s_rid_o,
-  output logic [63:0] axi_s_rdata_o,
-  output logic [1:0]  axi_s_rresp_o,
-  output logic        axi_s_rlast_o,
+  as_axi4_if.slave                   axi4_if,
   // -------------------------------------------------------------------------
   // SPI PHY
   // -------------------------------------------------------------------------
@@ -335,15 +322,22 @@ module as_qspi_top #(
   logic axi_active;
   assign axi_active = (axi_st != AXI_IDLE);
 
+  // AW / W / B channels: read-only slave → safe idle
+  assign axi4_if.awready = 1'b0;
+  assign axi4_if.wready  = 1'b0;
+  assign axi4_if.bvalid  = 1'b0;
+  assign axi4_if.bid     = '0;
+  assign axi4_if.bresp   = 2'b00;
+
   // ARREADY: high when idle and kernel is not busy from Wishbone side
-  assign axi_s_arready_o = (axi_st == AXI_IDLE) && !stat_busy_s;
+  assign axi4_if.arready = (axi_st == AXI_IDLE) && !stat_busy_s;
 
   // R channel outputs
-  assign axi_s_rvalid_o = (axi_st == AXI_RESP);
-  assign axi_s_rdata_o  = axi_buf[axi_beat_cnt];
-  assign axi_s_rid_o    = axi_arid_r;
-  assign axi_s_rresp_o  = 2'b00;   // OKAY
-  assign axi_s_rlast_o  = (axi_beat_cnt == 2'd3);
+  assign axi4_if.rvalid = (axi_st == AXI_RESP);
+  assign axi4_if.rdata  = axi_buf[axi_beat_cnt];
+  assign axi4_if.rid    = {axi_arid_r};
+  assign axi4_if.rresp  = 2'b00;   // OKAY
+  assign axi4_if.rlast  = (axi_beat_cnt == 2'd3);
 
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i) begin
@@ -357,9 +351,9 @@ module as_qspi_top #(
       case (axi_st)
 
         AXI_IDLE: begin
-          if (axi_s_arvalid_i && axi_s_arready_o) begin
-            axi_araddr_r <= axi_s_araddr_i;
-            axi_arid_r   <= axi_s_arid_i;
+          if (axi4_if.arvalid && axi4_if.arready) begin
+            axi_araddr_r <= axi4_if.araddr[31:0];
+            axi_arid_r   <= axi4_if.arid[3:0];
             axi_sub_cnt  <= '0;
             axi_beat_cnt <= '0;
             axi_st       <= AXI_KICK;
@@ -391,7 +385,7 @@ module as_qspi_top #(
         end
 
         AXI_RESP: begin
-          if (axi_s_rvalid_o && axi_s_rready_i) begin
+          if (axi4_if.rvalid && axi4_if.rready) begin
             if (axi_beat_cnt == 2'd3)
               axi_st <= AXI_IDLE;
             else

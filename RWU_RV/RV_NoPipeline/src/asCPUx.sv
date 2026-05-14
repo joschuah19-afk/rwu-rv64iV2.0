@@ -41,20 +41,23 @@ module as_cpux (input  logic                         clk_i,
                input  logic                          rst_i,
                input  logic tck_i,
                output logic [instr_width-1:0]        ir_o,         // needed for byte-select logic in D-Mem
-               input  logic dr_cap_i, 
+               input  logic dr_cap_i,
               // Scan Chain
                output logic                          sc01_tdo_o,   // scan: serial out
                input  logic                          sc01_tdi_i,   // scan: serial in
                input  logic                          sc01_shift_i, // scan: shift enable
                input  logic                          sc01_clock_i, // scan: clock enabe
-               // Instruction bus
+               // Instruction bus (legacy flat BPI)
                output logic [iaddr_width-1:0]        iBusAddr_o,     // I-Bus: address
                input  logic [instr_width-1:0]        iBusDataRd_i,   // I-Bus: data
-               // Data bus
+               // Data bus (legacy flat BPI)
                output logic [daddr_width-1:0]        dBusAddr_o,     // address for dmem
                output logic [reg_width-1:0]          dBusDataWr_o,   // data to dmem
                input  logic [reg_width-1:0]          dBusDataRd_i,   // data from dmem
                output logic                          dBusWe_o,       // write enable fo dmem
+               // Cache interfaces (disabled: tied to 0 until as_top_mem connects asMemTop)
+               as_icache_if.cpu                      icpu_if,
+               as_dcache_if.cpu                      dcpu_if,
                // IRQ
                input logic [irq_total_num_ext_c-1:0] irq_ext_i // External interrupts, irq_ext_i[7] = GPIO
               );
@@ -708,6 +711,22 @@ module as_cpux (input  logic                         clk_i,
   //      - mehr IRQ-Quellen, Exceptions ud Traps        (done)
   //      - Assembler-Testprogramm schreiben             (done)
   //      - External IRQ programmable: level, rising, falling edge
+
+  //--------------------------------------------
+  // Cache interfaces – disabled, tied to 0
+  // Active low-level: CPU drives addr/req/wr to 0; cache responses unused.
+  //--------------------------------------------
+  assign icpu_if.ic_addr  = '0;
+  assign icpu_if.ic_req   = 1'b0;
+  assign icpu_if.ic_flush = 1'b0;
+
+  assign dcpu_if.dc_addr  = '0;
+  assign dcpu_if.dc_req   = 1'b0;
+  assign dcpu_if.dc_wr    = 1'b0;
+  assign dcpu_if.dc_size  = '0;
+  assign dcpu_if.dc_wdata = '0;
+  assign dcpu_if.dc_wstrb = '0;
+  assign dcpu_if.dc_flush = 1'b0;
 
   //--------------------------------------------
   // Test Scan Chain

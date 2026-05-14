@@ -1531,7 +1531,7 @@ and the required CPU action.
 \caption{DMA Coherency Requirements by Memory Region}
 \label{tab:asDmaCoh}
 \centering
-\begin{tabularx}{\textwidth}{|l |X |X |X|}
+\begin{tabularx}{\textwidth}{|l |X |l |X|}
   \hline
   DMA source & DMA destination & Coherency issue? & Required CPU action \\
   \hline
@@ -1800,12 +1800,12 @@ The trap handler at \texttt{mtvec} may:
 
 \begin{verbatim}
 // as_icache_if additions:
-logic ic_err;       // new: AXI4 read error → Instruction Access Fault
+logic ic_err;// new: AXI4 read error → Instruction Access Fault
 modport cpu  (..., input ic_err);
 modport cache(..., output ic_err);
 
 // as_dcache_if additions:
-logic dc_err;       // new: AXI4 read error → Load Access Fault
+logic dc_err;// new: AXI4 read error → Load Access Fault
 modport cpu  (..., input dc_err);
 modport cache(..., output dc_err);
 \end{verbatim}
@@ -2033,7 +2033,7 @@ Table~\ref{tab:asMemSpeedup}.
          ($t_\text{L2} = 2$ cycles, $t_\text{miss} = 42$ cycles)}
 \label{tab:asMemSpeedup}
 \centering
-\begin{tabularx}{\textwidth}{|l |l |l |l |l|}
+\begin{tabularx}{\textwidth}{|X |X |l |l |l|}
   \hline
   L1 miss rate $m_1$ & L2 miss rate $m_2$ & AMAT$_\text{2-level}$ &
   AMAT$_\text{3-level}$ & Speed-Up \\
@@ -2183,10 +2183,10 @@ data bus, and the AXI4 master port toward the QSPI controller.
 No combinatorial or sequential logic resides in this module beyond
 wire connections and interface bindings.
 
-\paragraph{Port list.}
+\paragraph{Port list} of the memory top-level:
 
 \begin{table}[H]
-\caption{\texttt{asMemTop} Port List}
+\caption{\texttt{asMemTop} Port List (1)}
 \label{tab:asMemTopPorts}
 \centering
 \begin{tabularx}{\textwidth}{|l |l |l |l |X|}
@@ -2217,6 +2217,19 @@ wire connections and interface bindings.
   \texttt{ic\_rdata\_o}       & out & 32 & CPU IF stage          & Instruction word (32-bit) \\
   \hline
   \texttt{ic\_rvalid\_o}      & out & 1  & CPU IF stage          & Instruction word valid \\
+  \hline
+\end{tabularx}
+\end{table}
+
+
+\begin{table}[H]
+\caption{\texttt{asMemTop} Port List (2)}
+\label{tab:asMemTopPorts2}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+  \hline
+  Signal & Dir & Width & Connected to & Description \\
+  \hline
   \hline
   \multicolumn{5}{|l|}{\textit{CPU Data Bus (via \texttt{as\_dcache\_if})}} \\
   \hline
@@ -2251,6 +2264,7 @@ wire connections and interface bindings.
 \end{tabularx}
 \end{table}
 
+
 \paragraph{Internal algorithm.}
 \texttt{asMemTop} contains no logic.
 It instantiates exactly the seven modules listed in
@@ -2274,7 +2288,8 @@ signals (\texttt{CLK}, \texttt{CEN}, \texttt{WEN}, \texttt{BWEN},
 Section~\ref{subsec:sramMacros}.
 In simulation the SPRAM macros are replaced by \texttt{asSpramModel}.
 
-\paragraph{Port list.}
+\paragraph{Port list} of the I-cache:
+
 
 \begin{table}[H]
 \caption{\texttt{asICacheBlock} Port List}
@@ -2345,7 +2360,7 @@ Wraps D-Tag SRAM (96\,bit\,$\times$\,32) and D-Data SRAM
 (256\,bit\,$\times$\,128); same SPRAM macros, same timing, same
 simulation guard.
 
-\paragraph{Port list.}
+\paragraph{Port list} of the D-cache:
 
 \begin{table}[H]
 \caption{\texttt{asDCacheBlock} Port List}
@@ -2405,7 +2420,7 @@ Wraps a single X-Fab XO035 SPRAM macro configured as
 Provides byte-level write access required for sub-word stores (byte,
 halfword, word) to stack, heap, \texttt{.data}, and \texttt{.bss}.
 
-\paragraph{Port list.}
+\paragraph{Port list} of the scratch-pad memory:
 
 \begin{table}[H]
 \caption{\texttt{asSpBlock} Port List}
@@ -2460,10 +2475,10 @@ Drives the \texttt{asICacheBlock} SRAM interface, accepts instruction
 fetch requests from the CPU via \texttt{as\_icache\_if}, and issues
 AXI4 AR/R burst transactions to \texttt{asMemArb} on a cache miss.
 
-\paragraph{Port list.}
+\paragraph{Port list} of the I-cache controller:
 
 \begin{table}[H]
-\caption{\texttt{asICacheCtrl} Port List}
+\caption{\texttt{asICacheCtrl} Port List (1)}
 \label{tab:asICacheCtrlPorts}
 \centering
 \begin{tabularx}{\textwidth}{|l |l |l |l |X|}
@@ -2519,6 +2534,18 @@ AXI4 AR/R burst transactions to \texttt{asMemArb} on a cache miss.
   \hline
   \texttt{id\_rdata\_i} & in  & 256 & \texttt{asICacheBlock} & Full 256-bit cache line \\
   \hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\caption{\texttt{asICacheCtrl} Port List (2)}
+\label{tab:asICacheCtrlPorts2}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+  \hline
+  Signal & Dir & Width & Connected to & Description \\
+  \hline
+  \hline 
   \multicolumn{5}{|l|}{\textit{AXI4 Master Port -- AR and R channels only (to \texttt{asMemArb})}} \\
   \hline
   \texttt{arid\_o}    & out & 4  & \texttt{asMemArb} & Always 4'h1 (I-Cache ID) \\
@@ -2550,13 +2577,14 @@ AXI4 AR/R burst transactions to \texttt{asMemArb} on a cache miss.
 \end{tabularx}
 \end{table}
 
+
 \paragraph{Internal algorithm.}
 The FSM is described in Table~\ref{tab:asICacheFsm}.
 The sequential logic is as follows:
 
 \begin{enumerate}
   \item \textbf{IDLE\,$\to$\,LOOKUP:}
-    On \texttt{ic\_req\_i}\,=\,1 assert \texttt{it\_ce\_o} with
+    On \texttt{ic\_req\_i}\,=\,1 assert \texttt{it\_ce\_o} with \\
     \texttt{it\_addr\_o}\,=\,\texttt{ic\_addr\_i[9:5]}.
     Advance to LOOKUP.
 
@@ -2616,10 +2644,10 @@ the AXI4 miss path; routes Scratchpad-region loads and stores directly
 to \texttt{asSpBlock} (bypass path).
 No write path to Flash exists.
 
-\paragraph{Port list.}
+\paragraph{Port list} of the D-cache controller:
 
 \begin{table}[H]
-\caption{\texttt{asDCacheCtrl} Port List}
+\caption{\texttt{asDCacheCtrl} Port List (1)}
 \label{tab:asDCacheCtrlPorts}
 \centering
 \begin{tabularx}{\textwidth}{|l |l |l |l |X|}
@@ -2683,6 +2711,18 @@ No write path to Flash exists.
   \hline
   \texttt{dd\_rdata\_i} & in  & 256 & \texttt{asDCacheBlock} & Full cache line \\
   \hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\caption{\texttt{asDCacheCtrl} Port List (2)}
+\label{tab:asDCacheCtrlPorts2}
+\centering
+\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+  \hline
+  Signal & Dir & Width & Connected to & Description \\
+  \hline
+  \hline
   \multicolumn{5}{|l|}{\textit{Scratchpad SRAM port (to \texttt{asSpBlock})}} \\
   \hline
   \texttt{sp\_addr\_o}  & out & 10 & \texttt{asSpBlock} & Word address \texttt{dc\_addr\_i[12:3]} \\
@@ -2727,6 +2767,8 @@ No write path to Flash exists.
   \hline
 \end{tabularx}
 \end{table}
+
+
 
 \paragraph{Internal algorithm.}
 The FSM is described in Table~\ref{tab:asDCacheFsm}.
@@ -2788,13 +2830,13 @@ and D-Cache controllers onto the single AXI4 port of the QSPI
 controller.
 D-Cache has priority over I-Cache (Table~\ref{tab:asArbPriority}).
 
-\paragraph{Port list.}
+\paragraph{Port list} of the memory arbiter:
 
 \begin{table}[H]
-\caption{\texttt{asMemArb} Port List}
+\caption{\texttt{asMemArb} Port List (1)}
 \label{tab:asMemArbPorts}
 \centering
-\begin{tabularx}{\textwidth}{|l |l |l |l |X|}
+\begin{tabularx}{\textwidth}{|X |l |l |X |X|}
   \hline
   Signal & Dir & Width & Connected to & Description \\
   \hline
@@ -2834,6 +2876,18 @@ D-Cache has priority over I-Cache (Table~\ref{tab:asArbPriority}).
   \multicolumn{5}{|l|}{\textit{D-Cache AXI4 Slave Port (AR + R channels; identical structure)}} \\
   \hline
   \texttt{dc\_ar*\_i / dc\_r*\_o / dc\_rready\_i} & in/out & -- & \texttt{asDCacheCtrl} & Same signals as I-Cache port; prefix \texttt{dc\_} \\
+  \hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\caption{\texttt{asMemArb} Port List (2)}
+\label{tab:asMemArbPorts2}
+\centering
+\begin{tabularx}{\textwidth}{|X |l |l |X |X|}
+  \hline
+  Signal & Dir & Width & Connected to & Description \\
+  \hline
   \hline
   \multicolumn{5}{|l|}{\textit{QSPI Controller AXI4 Master Port}} \\
   \hline

@@ -1,0 +1,114 @@
+# ip_memsyst – Komplettes Memory-Subsystem (I-Cache + D-Cache + Scratchpad + MemArb)
+
+## Verzeichnisstruktur
+
+    ip_memsyst/
+    ├── src/asMemTop.sv        DUT: Memory-Subsystem Top (Integration aller Teilblöcke)
+    ├── tb/tb_asMemTop.sv      Testbench (TC01–TC10, 16 Checks)
+    ├── sim/sim_main.cpp        Verilator C++ Driver (FST-Trace)
+    └── CMakeLists.txt          Build-System (Verilator only)
+
+Abhängigkeiten (aus Nachbarverzeichnissen):
+- `as_pack.sv`        – Interfaces (as_icache_if, as_dcache_if, as_axi4_if)
+- `asICache.sv`       – Instruction-Cache (../ip_icache/src/)
+- `asDCache.sv`       – Data-Cache (../ip_dcache/src/)
+- `asScratch.sv`      – Scratchpad SRAM (../ip_scratch/src/)
+- `asMemArb.sv`       – AXI4-Arbiter I-Cache + D-Cache → QSPI (../ip_memarb/src/)
+
+## Simulation starten
+
+Alle Befehle werden im Verzeichnis `ip_memsyst/` ausgeführt.
+
+### Einmalig: Build-Verzeichnis erzeugen
+
+    rm -rf build
+    cmake -S . -B build
+
+### Variante 1 – Nur Simulation (Regression, kein Waveform)
+
+    cmake --build build --target simulate
+
+Ausgabe auf stdout:
+    === tb_asMemTop start ===
+    TC01 ... TC10 ...
+    PASS: all 16 checks passed.
+
+### Variante 2 – Simulation + GTKWave
+
+    cmake --build build --target waves
+
+Startet erst die Simulation, öffnet dann GTKWave mit `dump_memsyst.fst`.
+
+### Variante 3 – Nur Verilieren / Kompilieren (kein Run)
+
+    cmake --build build --target verilate
+
+Erzeugt das Verilator-Binary `build/obj_dir/Vtb_asMemTop`, ohne es auszuführen.
+
+## Waveform-Datei
+
+Die FST-Datei `dump_memsyst.fst` wird bei jedem Simulation-Run im
+Build-Verzeichnis (`build/`) erzeugt bzw. überschrieben.
+Manuell öffnen:
+
+    gtkwave build/dump_memsyst.fst
+
+## Komplette Sequenz (Clean Build + Run)
+
+    rm -rf build
+    cmake -S . -B build
+    cmake --build build --target simulate
+
+## Systemarchitektur (asMemTop)
+
+    CPU I-Bus ──► asICache ──► AXI4 ──┐
+                                       ├──► asMemArb ──► qspi_if (AXI4 Master)
+    CPU D-Bus ──► Adress-Decode        │
+                  │ SP-Region          │
+                  ├──► asScratch       │
+                  │ Flash-Region       │
+                  └──► asDCache ──► AXI4 ──┘
+
+Adress-Decode (D-Bus):
+- Scratchpad: `dc_addr ∈ [SP_BASE, SP_BASE + SP_DEPTH×8)`  → asScratch (kein AXI4)
+- Flash:      alle anderen Adressen                          → asDCache → AXI4
+
+D-Cache ist read-only (CPU-Stores gehen ausschließlich in den Scratchpad);
+Dirty-Eviction findet nie statt.
+
+## Parameter (asMemTop)
+
+| Parameter    | Default        | Bedeutung                                    |
+|--------------|----------------|----------------------------------------------|
+| CACHE_SIZE_B | 4096           | Cache-Größe in Bytes (I-Cache und D-Cache)   |
+| WAYS         | 4              | Assoziativität (set-associative)             |
+| LINE_BYTES   | 32             | Cache-Line-Größe in Bytes                    |
+| PA_WIDTH     | 32             | Physikalische Adressbreite                   |
+| AXI_DW       | 64             | AXI4 Datenbusbreite in Bits                  |
+| SP_DEPTH     | 1024           | Scratchpad-Tiefe (Anzahl 64-Bit-Einträge)    |
+| SP_BASE      | 0x2000_0000    | Basisadresse Scratchpad                      |
+
+## Externe Schnittstellen (asMemTop)
+
+| Port      | Typ                  | Richtung  | Bedeutung                          |
+|-----------|----------------------|-----------|------------------------------------|
+| clk_i     | logic                | Input     | Systemtakt                         |
+| rst_i     | logic                | Input     | Synchroner Reset (high-aktiv)      |
+| icpu_if   | as_icache_if.cache   | bidirekt. | CPU Instruction-Bus                |
+| dcpu_if   | as_dcache_if.cache   | bidirekt. | CPU Data-Bus                       |
+| qspi_if   | as_axi4_if.master    | bidirekt. | AXI4 zum QSPI-Controller (Slave)   |
+
+## Testfälle (tb_asMemTop.sv)
+
+| TC   | Beschreibung                                                               | Checks |
+|------|----------------------------------------------------------------------------|--------|
+| TC01 | Scratchpad: ld Schreib-/Lesezugriff; lw sign-extend                       | 2      |
+| TC02 | I-Cache Cold-Miss: AXI4-Fill, ARADDR und ic_rdata prüfen                  | 2      |
+| TC03 | I-Cache Hit: gleiche Cache-Line, anderer Offset                            | 1      |
+| TC04 | D-Cache Cold-Miss: AXI4-Fill, ARADDR und dc_rdata prüfen                  | 2      |
+| TC05 | D-Cache Hit: gleiche Cache-Line, lwu (zero-extend)                         | 1      |
+| TC06 | Scratchpad lbu + lhu zero-extend                                           | 2      |
+| TC07 | D-Cache zweiter Miss (neue Cache-Line)                                     | 2      |
+| TC08 | I-Cache zweiter Miss (neue Cache-Line)                                     | 1      |
+| TC09 | I-Cache Hits innerhalb der in TC08 gefüllten Line                          | 2      |
+| TC10 | Scratchpad Partial-Write (wstrb=0x55), ld-Rückleseverifikation             | 1      |

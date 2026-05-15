@@ -66,7 +66,13 @@ set(SOURCES_SV
     ${IP_ROOT}/ip_qspi/src/asQspiTop.sv
 
     # Memory subsystem IPs
+    ${IP_ROOT}/ip_icache/src/as_icache_data_ram.sv
+    ${IP_ROOT}/ip_icache/src/as_icache_tag_ram.sv
+    ${IP_ROOT}/ip_icache/src/as_icache_valid_reg.sv
     ${IP_ROOT}/ip_icache/src/asICache.sv
+    ${IP_ROOT}/ip_dcache/src/as_dcache_data_ram.sv
+    ${IP_ROOT}/ip_dcache/src/as_dcache_tag_ram.sv
+    ${IP_ROOT}/ip_dcache/src/as_dcache_valid_reg.sv
     ${IP_ROOT}/ip_dcache/src/asDCache.sv
     ${IP_ROOT}/ip_scratch/src/as_sram_sp64.sv
     ${IP_ROOT}/ip_scratch/src/asScratch.sv

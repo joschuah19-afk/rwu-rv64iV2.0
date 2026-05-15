@@ -7,6 +7,9 @@ set(AS_PACK ${PROJECT_ROOT}/../RWU_RV/RV_NoPipeline/src/as_pack.sv)
 
 set(SOURCES_SV
     ${AS_PACK}
+    ${PROJECT_ROOT}/src/as_dcache_data_ram.sv
+    ${PROJECT_ROOT}/src/as_dcache_tag_ram.sv
+    ${PROJECT_ROOT}/src/as_dcache_valid_reg.sv
     ${PROJECT_ROOT}/src/asDCache.sv
     ${PROJECT_ROOT}/tb/${TB_TOP}.sv
 )

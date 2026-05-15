@@ -2,8 +2,6 @@
 import as_pack::*;
 
 // 4-way set-associative instruction cache (read-only, no write-back).
-// Behavioral SRAM models included for simulation.
-// For synthesis, replace tag_r / data_r arrays with SPRAM_96x32 / SPRAM_256x128 macros.
 //
 // Address decomposition (default: PA=32, 4 KB, 4-way, 32 B line):
 //   [31:10] = tag (22 bits)
@@ -12,6 +10,13 @@ import as_pack::*;
 //   [1:0]   = byte offset within 32-bit instruction (ignored)
 //
 // AXI4 master: ID=4'h1, ARLEN=3, ARSIZE=3, ARBURST=INCR (read channels only)
+//
+// SRAM sub-modules:
+//   as_icache_data_ram  – data store (WAYS × LINE_BITS, registered output)
+//   as_icache_tag_ram   – tag store  (WAYS × TAG_BITS,  registered output)
+//   as_icache_valid_reg – valid flags (WAYS × 1, combinatorial output, FF-based)
+// For ASIC: replace the three *_ram modules with X-Fab SRAM wrappers.
+// Read timing: address driven in IDLE → registered output valid in LOOKUP.
 
 module asICache #(
   parameter int CACHE_SIZE_B = 4096,
@@ -29,32 +34,54 @@ module asICache #(
   // -------------------------------------------------------------------------
   // Derived parameters
   // -------------------------------------------------------------------------
-  localparam int SETS        = CACHE_SIZE_B / (WAYS * LINE_BYTES);      // 32
-  localparam int OFFSET_BITS = $clog2(LINE_BYTES);                       // 5
-  localparam int INDEX_BITS  = $clog2(SETS);                             // 5
-  localparam int TAG_BITS    = PA_WIDTH - INDEX_BITS - OFFSET_BITS;     // 22
-  localparam int BEATS       = LINE_BYTES / (AXI_DW / 8);               // 4
-  localparam int BEAT_BITS   = $clog2(BEATS);                            // 2
-  localparam int LINE_BITS   = LINE_BYTES * 8;                           // 256
+  localparam int SETS        = CACHE_SIZE_B / (WAYS * LINE_BYTES);
+  localparam int OFFSET_BITS = $clog2(LINE_BYTES);
+  localparam int INDEX_BITS  = $clog2(SETS);
+  localparam int TAG_BITS    = PA_WIDTH - INDEX_BITS - OFFSET_BITS;
+  localparam int BEATS       = LINE_BYTES / (AXI_DW / 8);
+  localparam int BEAT_BITS   = $clog2(BEATS);
+  localparam int LINE_BITS   = LINE_BYTES * 8;
 
   // -------------------------------------------------------------------------
   // Address decomposition (combinatorial, from live CPU request)
   // -------------------------------------------------------------------------
   logic [TAG_BITS-1:0]   req_tag_s;
   logic [INDEX_BITS-1:0] req_idx_s;
-  logic [2:0]            req_instr_s;   // ic_addr[4:2]
+  logic [2:0]            req_instr_s;
 
   assign req_tag_s   = cpu_if.ic_addr[PA_WIDTH-1 : INDEX_BITS+OFFSET_BITS];
   assign req_idx_s   = cpu_if.ic_addr[INDEX_BITS+OFFSET_BITS-1 : OFFSET_BITS];
   assign req_instr_s = cpu_if.ic_addr[OFFSET_BITS-1 : 2];
 
   // -------------------------------------------------------------------------
-  // Behavioral SRAM models (replaced by SPRAM macros in synthesis)
+  // SRAM / register-file output wires
   // -------------------------------------------------------------------------
-  logic                  valid_r [0:SETS-1][0:WAYS-1];
-  logic [TAG_BITS-1:0]   tag_r   [0:SETS-1][0:WAYS-1];
-  logic [2:0]            plru_r  [0:SETS-1];
-  logic [LINE_BITS-1:0]  data_r  [0:SETS-1][0:WAYS-1];
+  logic [WAYS-1:0][LINE_BITS-1:0] data_rdata_s;  // registered, all WAYS
+  logic [WAYS-1:0][TAG_BITS-1:0]  tag_rdata_s;   // registered, all WAYS
+  logic [WAYS-1:0]                valid_rdata_s;  // combinatorial, all WAYS
+
+  // -------------------------------------------------------------------------
+  // SRAM write-port control (combinatorial decode from FSM state)
+  // -------------------------------------------------------------------------
+  logic                    data_wr_en_s;
+  logic [$clog2(WAYS)-1:0] data_wr_way_s;
+  logic [INDEX_BITS-1:0]   data_wr_addr_s;
+  logic [LINE_BITS-1:0]    data_wr_data_s;
+
+  logic                    tag_wr_en_s;
+  logic [$clog2(WAYS)-1:0] tag_wr_way_s;
+  logic [INDEX_BITS-1:0]   tag_wr_addr_s;
+  logic [TAG_BITS-1:0]     tag_wr_data_s;
+
+  logic                    valid_wr_en_s;
+  logic [$clog2(WAYS)-1:0] valid_wr_way_s;
+  logic [INDEX_BITS-1:0]   valid_wr_addr_s;
+
+  logic                    valid_flush_en_s;
+  logic [INDEX_BITS-1:0]   valid_flush_addr_s;
+
+  // Fill line assembly (combinatorial from fill_buf_r + AXI beat)
+  logic [LINE_BITS-1:0] fill_line_s;
 
   // -------------------------------------------------------------------------
   // FSM
@@ -72,15 +99,15 @@ module asICache #(
   state_t state_r;
 
   // -------------------------------------------------------------------------
-  // Latched request (SRAM pipeline register: addressed in IDLE, read in LOOKUP)
+  // Latched request
   // -------------------------------------------------------------------------
   logic [TAG_BITS-1:0]   lk_tag_r;
   logic [INDEX_BITS-1:0] lk_idx_r;
   logic [2:0]            lk_instr_r;
-  logic [PA_WIDTH-1:0]   lk_line_addr_r;  // cache-line aligned, for AXI4 ARADDR
+  logic [PA_WIDTH-1:0]   lk_line_addr_r;
 
   // -------------------------------------------------------------------------
-  // Hit detection (combinatorial on latched address)
+  // Hit detection (combinatorial on latched address + SRAM registered output)
   // -------------------------------------------------------------------------
   logic [WAYS-1:0]            hit_vec_s;
   logic                       hit_s;
@@ -89,7 +116,7 @@ module asICache #(
   always_comb begin
     hit_vec_s = '0;
     for (int i = 0; i < WAYS; i++)
-      hit_vec_s[i] = valid_r[lk_idx_r][i] & (tag_r[lk_idx_r][i] == lk_tag_r);
+      hit_vec_s[i] = valid_rdata_s[i] & (tag_rdata_s[i] == lk_tag_r);
   end
   assign hit_s = |hit_vec_s;
   always_comb begin
@@ -106,11 +133,12 @@ module asICache #(
   logic [$clog2(WAYS)-1:0]    inv_way_s;
   logic [$clog2(WAYS)-1:0]    plru_victim_s;
   logic [$clog2(WAYS)-1:0]    fill_way_s;
+  logic [2:0]                 plru_r [0:SETS-1];
 
   always_comb begin
     inv_vec_s = '0;
     for (int i = 0; i < WAYS; i++)
-      inv_vec_s[i] = ~valid_r[lk_idx_r][i];
+      inv_vec_s[i] = ~valid_rdata_s[i];
   end
   assign has_inv_s = |inv_vec_s;
   always_comb begin
@@ -129,7 +157,7 @@ module asICache #(
   assign fill_way_s = has_inv_s ? inv_way_s : plru_victim_s;
 
   // -------------------------------------------------------------------------
-  // Fill and flush registers
+  // Fill / flush registers
   // -------------------------------------------------------------------------
   logic [$clog2(WAYS)-1:0] fill_way_r;
   logic [BEAT_BITS-1:0]    beat_r;
@@ -143,6 +171,45 @@ module asICache #(
   // CPU outputs
   logic [31:0]  rdata_r;
   logic         rvalid_r, stall_r, flush_done_r, err_r;
+
+  // -------------------------------------------------------------------------
+  // Fill line assembly
+  // -------------------------------------------------------------------------
+  always_comb begin
+    fill_line_s = fill_buf_r;
+    fill_line_s[{beat_r, 6'd0} +: AXI_DW] = axi_if.rdata;
+  end
+
+  // -------------------------------------------------------------------------
+  // SRAM write-port combinatorial decode
+  // -------------------------------------------------------------------------
+  always_comb begin
+    data_wr_en_s   = 1'b0;
+    data_wr_way_s  = fill_way_r;
+    data_wr_addr_s = lk_idx_r;
+    data_wr_data_s = fill_line_s;
+
+    tag_wr_en_s   = 1'b0;
+    tag_wr_way_s  = fill_way_r;
+    tag_wr_addr_s = lk_idx_r;
+    tag_wr_data_s = lk_tag_r;
+
+    valid_wr_en_s   = 1'b0;
+    valid_wr_way_s  = fill_way_r;
+    valid_wr_addr_s = lk_idx_r;
+
+    valid_flush_en_s   = 1'b0;
+    valid_flush_addr_s = flush_cnt_r;
+
+    if (state_r == FILL && axi_if.rvalid && axi_if.rlast && !(|axi_if.rresp)) begin
+      data_wr_en_s  = 1'b1;
+      tag_wr_en_s   = 1'b1;
+      valid_wr_en_s = 1'b1;
+    end
+
+    if (state_r == FLUSH)
+      valid_flush_en_s = 1'b1;
+  end
 
   // -------------------------------------------------------------------------
   // Port assignments
@@ -161,7 +228,6 @@ module asICache #(
   assign axi_if.arburst = 2'b01;
   assign axi_if.rready  = (state_r == FILL);
 
-  // Write channels: tied off (I-Cache is read-only)
   assign axi_if.awid    = '0; assign axi_if.awaddr  = '0;
   assign axi_if.awlen   = '0; assign axi_if.awsize  = '0;
   assign axi_if.awburst = '0; assign axi_if.awvalid = '0;
@@ -170,7 +236,7 @@ module asICache #(
   assign axi_if.bready  = '1;
 
   // -------------------------------------------------------------------------
-  // PLRU update: mark accessed_way as MRU
+  // PLRU update
   // -------------------------------------------------------------------------
   function automatic logic [2:0] plru_upd(
     input logic [2:0]              p,
@@ -199,26 +265,21 @@ module asICache #(
       flush_done_r <= '0;
       err_r        <= '0;
       beat_r       <= '0;
-      for (int s = 0; s < SETS; s++) begin
+      for (int s = 0; s < SETS; s++)
         plru_r[s] <= '0;
-        for (int w = 0; w < WAYS; w++)
-          valid_r[s][w] <= '0;
-      end
     end else begin
-      // Single-cycle pulse signals
       rvalid_r     <= '0;
       flush_done_r <= '0;
       err_r        <= '0;
 
       case (state_r)
 
-        // -- IDLE: wait for request ------------------------------------------
         IDLE: begin
           stall_r <= '0;
           if (cpu_if.ic_flush) begin
-            stall_r   <= '1;
+            stall_r     <= '1;
             flush_cnt_r <= '0;
-            state_r   <= FLUSH;
+            state_r     <= FLUSH;
           end else if (cpu_if.ic_req) begin
             lk_tag_r       <= req_tag_s;
             lk_idx_r       <= req_idx_s;
@@ -227,14 +288,15 @@ module asICache #(
                                {OFFSET_BITS{1'b0}}};
             stall_r <= '1;
             state_r <= LOOKUP;
+            // SRAM read address = req_idx_s (live); registered output available in LOOKUP.
           end
         end
 
-        // -- LOOKUP: tag compare (SRAM output from previous cycle) -----------
         LOOKUP: begin
+          // tag_rdata_s and data_rdata_s hold registered output from IDLE-phase read.
+          // valid_rdata_s is combinatorial from lk_idx_r (via valid_reg rd_addr = lk_idx_r).
           if (hit_s) begin
-            automatic logic [LINE_BITS-1:0] hl = data_r[lk_idx_r][hit_way_s];
-            rdata_r  <= hl[{lk_instr_r, 5'd0} +: 32];
+            rdata_r  <= data_rdata_s[hit_way_s][{lk_instr_r, 5'd0} +: 32];
             rvalid_r <= '1;
             stall_r  <= '0;
             plru_r[lk_idx_r] <= plru_upd(plru_r[lk_idx_r], hit_way_s);
@@ -249,7 +311,6 @@ module asICache #(
           end
         end
 
-        // -- MISS: wait for AXI4 AR handshake --------------------------------
         MISS: begin
           if (axi_if.arready) begin
             ar_valid_r <= '0;
@@ -257,49 +318,38 @@ module asICache #(
           end
         end
 
-        // -- FILL: receive 4 R-channel beats, write data SRAM ---------------
         FILL: begin
+          // data/tag/valid SRAM writes driven combinatorially by write-port decode above.
           if (axi_if.rvalid) begin
-            automatic logic [LINE_BITS-1:0] nl;
-            nl = fill_buf_r;
-            nl[{beat_r, 6'd0} +: AXI_DW] = axi_if.rdata;  // beat_r * 64
-
             if (|axi_if.rresp) begin
               err_r   <= '1;
               stall_r <= '0;
               state_r <= ERR;
             end else if (axi_if.rlast) begin
-              data_r [lk_idx_r][fill_way_r] <= nl;
-              tag_r  [lk_idx_r][fill_way_r] <= lk_tag_r;
-              valid_r[lk_idx_r][fill_way_r] <= '1;
-              plru_r [lk_idx_r]             <= plru_upd(plru_r[lk_idx_r], fill_way_r);
-              rdata_r <= nl[{lk_instr_r, 5'd0} +: 32];
+              plru_r[lk_idx_r] <= plru_upd(plru_r[lk_idx_r], fill_way_r);
+              rdata_r <= fill_line_s[{lk_instr_r, 5'd0} +: 32];
               state_r <= RESPOND;
             end else begin
-              fill_buf_r <= nl;
+              fill_buf_r <= fill_line_s;
               beat_r     <= beat_r + 1;
             end
           end
         end
 
-        // -- RESPOND: assert rvalid (rdata_r was computed in FILL, already stable) --
         RESPOND: begin
           rvalid_r <= '1;
           stall_r  <= '0;
           state_r  <= IDLE;
         end
 
-        // -- ERR: AXI4 error -- pulse ic_err, return to IDLE -----------------
         ERR: begin
           state_r <= IDLE;
         end
 
-        // -- FLUSH: invalidate all sets one per cycle, then assert flush_done -
+        // valid_flush_en_s drives the all-ways clear via combinatorial decode above.
         FLUSH: begin
-          for (int w = 0; w < WAYS; w++)
-            valid_r[flush_cnt_r][w] <= '0;
           plru_r[flush_cnt_r] <= '0;
-          if (&flush_cnt_r) begin          // flush_cnt_r == SETS-1
+          if (&flush_cnt_r) begin
             flush_done_r <= '1;
             stall_r      <= '0;
             state_r      <= IDLE;
@@ -312,5 +362,56 @@ module asICache #(
       endcase
     end
   end
+
+  // -------------------------------------------------------------------------
+  // SRAM sub-module instances
+  // -------------------------------------------------------------------------
+  // Read address: req_idx_s is the live CPU address. Presented in IDLE so the
+  // registered output is available exactly in LOOKUP (one cycle later).
+  // The valid_reg rd_addr is lk_idx_r (combinatorial, no latency needed).
+
+  as_icache_data_ram #(
+    .SETS     (SETS),
+    .WAYS     (WAYS),
+    .LINE_BITS(LINE_BITS)
+  ) data_ram (
+    .clk_i    (clk_i),
+    .rd_addr_i(req_idx_s),
+    .rd_data_o(data_rdata_s),
+    .wr_en_i  (data_wr_en_s),
+    .wr_way_i (data_wr_way_s),
+    .wr_addr_i(data_wr_addr_s),
+    .wr_data_i(data_wr_data_s)
+  );
+
+  as_icache_tag_ram #(
+    .SETS    (SETS),
+    .WAYS    (WAYS),
+    .TAG_BITS(TAG_BITS)
+  ) tag_ram (
+    .clk_i    (clk_i),
+    .rd_addr_i(req_idx_s),
+    .rd_data_o(tag_rdata_s),
+    .wr_en_i  (tag_wr_en_s),
+    .wr_way_i (tag_wr_way_s),
+    .wr_addr_i(tag_wr_addr_s),
+    .wr_data_i(tag_wr_data_s)
+  );
+
+  as_icache_valid_reg #(
+    .SETS(SETS),
+    .WAYS(WAYS)
+  ) valid_reg (
+    .clk_i      (clk_i),
+    .rst_i      (rst_i),
+    .rd_addr_i  (lk_idx_r),
+    .rd_data_o  (valid_rdata_s),
+    .wr_en_i    (valid_wr_en_s),
+    .wr_way_i   (valid_wr_way_s),
+    .wr_addr_i  (valid_wr_addr_s),
+    .wr_data_i  (1'b1),
+    .flush_en_i  (valid_flush_en_s),
+    .flush_addr_i(valid_flush_addr_s)
+  );
 
 endmodule : asICache

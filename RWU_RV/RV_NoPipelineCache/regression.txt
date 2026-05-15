@@ -1,0 +1,42 @@
+=== RV64I REGRESSION REPORT ===
+
+--- readgpioid ---
+15.05.2026 - readgpioid: Test ok
+15.05.2026 - readgpioid: Test ok
+
+--- instr01loadbyte ---
+15.05.2026 - load byte: Test ok
+15.05.2026 - load byte: Test ok
+
+--- instr02loadhalf ---
+15.05.2026 - load half: Test ok
+15.05.2026 - load half: Test ok
+
+--- instr03loadword ---
+15.05.2026 - load word: Test ok
+15.05.2026 - load word: Test ok
+
+--- instr04loadbyteu ---
+15.05.2026 - load byteu: Test ok
+15.05.2026 - load byteu: Test ok
+
+--- instr05loadhalfu ---
+15.05.2026 - load halfu: Test ok
+15.05.2026 - load halfu: Test ok
+
+--- instr06addi ---
+15.05.2026 - addi: Test ok
+15.05.2026 - addi: Test ok
+15.05.2026 - addi: Test ok
+
+--- instr19add ---
+15.05.2026 - add: Test ok
+15.05.2026 - add: Test ok
+
+--- instr07slli ---
+15.05.2026 - slli: Test ok
+15.05.2026 - slli: Test ok
+
+--- instr29lui ---
+15.05.2026 - lui: Test ok
+15.05.2026 - lui: Test ok

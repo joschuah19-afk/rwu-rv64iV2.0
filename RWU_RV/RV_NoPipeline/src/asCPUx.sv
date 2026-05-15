@@ -1,38 +1,5 @@
 
 // asCPUx.sv
-
-/*Die Architektur ist ein sequentieller idealer Prozessor.
-Die Pipeline ist nur eine Optimierung darunter.
- Und der Unterschied ist fundamental:
-
-Dein Modell	                          Richtiges Modell
-„Wann passt mir der IRQ gerade rein?“	  „IRQ existiert objektiv“
-IRQ als Event	                          IRQ als Zustand
-Pipeline bestimmt Realität	          Architektur bestimmt Realität
-viele Sonderfälle	                  keine Sonderfälle
- 
-Meins: Interrupts werden nur dann genommen, wenn zufällig gerade
-instr_commit_s aktiv ist. Der Interrupt hängt zeitlich an einem internen Pipeline-Event.
- 
-Soll: Interrupt ist level-basiert und architekturgetrieben, nicht pipelinegetrieben.
-Formal: „Ein Interrupt darf nach jeder abgeschlossenen Instruktion
-angenommen werden, unabhängig davon, wie die Pipeline intern aussieht.“
- 
- RISC-V Modell ist:
-Interrupt ist Master, Pipeline ist Slave
- 
- 
- Warum dein Design trotzdem funktioniert (meistens)
-Weil du dir mit:
-irq_pending_s
-flush_fetch_s
-load_pending_s
-instr_commit_s
-irq_commit_s
-eine riesige Event-Maschine gebaut hast, die zufällig das richtige tut.
-Aber das ist:
-zeitbasierte Korrektheit, nicht logische Korrektheit.
- */
 `timescale 1ns/1ps
 
 import as_pack::*;

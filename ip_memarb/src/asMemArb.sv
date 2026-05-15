@@ -68,16 +68,16 @@ module asMemArb (
     nextstate_s = state_s; // self arc
     case(state_s)
       ARB_IDLE_ST:     begin
-                       if (dcache_axi4.arvalid) 
-                         nextstate_s <= ARB_GRANT_D_ST;
-                       else if (icache_axi4.arvalid) 
-                         nextstate_s <= ARB_GRANT_I_ST;
+                       if (dcache_axi4.arvalid)
+                         nextstate_s = ARB_GRANT_D_ST;
+                       else if (icache_axi4.arvalid)
+                         nextstate_s = ARB_GRANT_I_ST;
                        end
       ARB_GRANT_D_ST:  if (qspi_axi4.rvalid & qspi_axi4.rlast & dcache_axi4.rready)
-                         nextstate_s <= ARB_IDLE_ST;
+                         nextstate_s = ARB_IDLE_ST;
       ARB_GRANT_I_ST:  if (qspi_axi4.rvalid & qspi_axi4.rlast & icache_axi4.rready)
-                         nextstate_s <= ARB_IDLE_ST;
-      default: nextstate_s <= ARB_IDLE_ST;
+                         nextstate_s = ARB_IDLE_ST;
+      default: nextstate_s = ARB_IDLE_ST;
     endcase
   end
   

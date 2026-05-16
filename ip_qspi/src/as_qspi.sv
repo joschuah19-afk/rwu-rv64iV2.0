@@ -100,6 +100,18 @@ module as_qspi (
 
 
   // ---------------------------------------------------------------------------
+  // Signal declarations (grouped here so all uses in FSM block 1 are post-declaration)
+  // ---------------------------------------------------------------------------
+  logic xip_active_r;
+  logic sck_fall_s, sck_rise_s;
+  logic sck_drive_s, sck_sample_s;
+  logic tx_flag_r;
+  logic [2:0]  cnt_cmd_r;
+  logic [4:0]  cnt_addr_r;
+  logic [5:0]  cnt_dum_r;
+  logic [19:0] cnt_dat_r;
+
+  // ---------------------------------------------------------------------------
   // FSM:
   // ---------------------------------------------------------------------------
   // ---------------------------------------------------------------------------
@@ -151,8 +163,6 @@ module as_qspi (
   logic       sck_en_s;
   logic [7:0] sck_cnt_r;
   logic       sck_r;
-  logic       sck_fall_s, sck_rise_s;
-  logic       sck_drive_s, sck_sample_s;
 
   // ... set sck enable
   always_comb
@@ -198,11 +208,6 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // Phase counters
   // ---------------------------------------------------------------------------
-  logic [2:0]  cnt_cmd_r;
-  logic [4:0]  cnt_addr_r;
-  logic [5:0]  cnt_dum_r;
-  logic [19:0] cnt_dat_r;
-
   always_ff @(posedge clk_i, posedge rst_i)
     if (rst_i)                  cnt_cmd_r <= '0;
     else if (state_s != cmd_st) cnt_cmd_r <= '0;
@@ -227,7 +232,6 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // TX direction flag
   // ---------------------------------------------------------------------------
-  logic tx_flag_r;
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)                       tx_flag_r <= 1'b0;
     else if (start_i && !tx_empty_i) tx_flag_r <= 1'b1;
@@ -271,7 +275,6 @@ module as_qspi (
   // ---------------------------------------------------------------------------
   // XIP state
   // ---------------------------------------------------------------------------
-  logic xip_active_r;
   always_ff @(posedge clk_i, posedge rst_i) begin
     if (rst_i)              xip_active_r <= 1'b0;
     else if (!ctrl_reg_i.xip) xip_active_r <= 1'b0;

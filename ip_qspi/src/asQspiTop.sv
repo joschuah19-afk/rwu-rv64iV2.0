@@ -322,6 +322,9 @@ module as_qspi_top #(
   logic axi_active;
   assign axi_active = (axi_st != AXI_IDLE);
 
+  // Forward declarations: used in ARREADY assign and AXI FSM before QSPI kernel section
+  logic stat_busy_s, stat_done_s, stat_error_s, stat_timeout_s, xip_active_s;
+
   // AW / W / B channels: read-only slave → safe idle
   assign axi4_if.awready = 1'b0;
   assign axi4_if.wready  = 1'b0;
@@ -422,8 +425,6 @@ module as_qspi_top #(
   // ---------------------------------------------------------------------------
   // QSPI kernel instantiation
   // ---------------------------------------------------------------------------
-  logic stat_busy_s, stat_done_s, stat_error_s, stat_timeout_s, xip_active_s;
-
   as_qspi u_qspi (
     .rst_i          (rst_i),
     .clk_i          (clk_i),

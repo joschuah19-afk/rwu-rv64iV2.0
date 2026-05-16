@@ -90,8 +90,9 @@ module tb_rv64i ();
   always @(negedge clk_core_s) begin
     if(cs_s === 1) begin
       $display("CS detected");
-      case(gpio_s)
-          1, 129   : begin $display("GPIO ID Read Passed!: 0x%0h", gpio_s);
+      // direction[7]=1 → gpio_io[7]=Z; casez treats Z in expression as don't-care
+      casez(gpio_s)
+          8'b?000_0001 : begin $display("GPIO ID Read Passed!: 0x%0h", gpio_s);
                         $display("Simulation readgpioid succeeded"); #100; #(1*2*clk_2_t);
                         $fdisplay(fd,"%s - readgpioid: Test ok", get_time());
                         $fclose(fd); $stop; end

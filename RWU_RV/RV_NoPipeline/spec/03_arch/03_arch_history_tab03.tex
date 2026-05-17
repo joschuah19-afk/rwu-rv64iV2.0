@@ -1,22 +1,504 @@
 \begin{table}[H]
-%\begin{table}[ht]
-\caption{History}
-\label{tab:arch_history03}
-\centering
-\begin{tabularx}{\textwidth}{|X |X |X |}
-  \hline
-  \multicolumn{3}{|l|}{History} \\
-  \hline
-  \multicolumn{1}{|l}{Target Spec.} & \multicolumn{1}{l}{Current version : 1.0, 2025-02-22} & \multicolumn{1}{l|}{Author: A. Siggelkow}\\
-  \multicolumn{1}{|l}{ } & \multicolumn{1}{l}{Previous version : 0.0, 2020-10-12} & \multicolumn{1}{l|}{ }\\
-  \hline
-  \hline
-  Paragraph (in previous version) & Paragraph (in current version) / date & Subjects (major changes since last revision) \\
-  \hline
-  \hline
-  \multicolumn{3}{|l|}{Current Chapter Version: C0.1; Date: 2025-02-22} \\
-  \hline
-  & 2025-02-22 & First draft (AS) \\
-  \hline
-\end{tabularx}
+	%\begin{table}[ht]
+	\caption{History}
+	\label{tab:arch_history03}
+	\centering
+	\begin{tabularx}{\textwidth}{|X |X |X |}
+	  \hline
+	  \multicolumn{3}{|l|}{History} \\
+	  \hline
+	  \multicolumn{1}{|l}{Target Spec.} & \multicolumn{1}{l}{Current version : 1.0, 2025-02-22} & \multicolumn{1}{l|}{Author: A. Siggelkow}\\
+	  \multicolumn{1}{|l}{ } & \multicolumn{1}{l}{Previous version : 0.0, 2020-10-12} & \multicolumn{1}{l|}{ }\\
+	  \hline
+	  \hline
+	  Paragraph (in previous version) & Paragraph (in current version) / date & Subjects (major changes since last revision) \\
+	  \hline
+	  \hline
+	  \multicolumn{3}{|l|}{Current Chapter Version: C0.1; Date: 2025-02-22} \\
+	  \hline
+	  & 2025-02-22 & First draft (AS) \\
+	  \hline
+	\end{tabularx}
 \end{table}
+
+\subsection{Required Control and Status Registers (CSRs)}
+	
+	\subsubsection{Machine Trap Setup CSRs}
+		\begin{itemize}
+			\item \textbf{mstatus (0x300):} Machine status register.
+			\item \textbf{misa (0x301):} ISA and extensions
+			\item \textbf{medeleg (0x302):} Machine exception delegation register.
+			\item \textbf{mideleg (0x303):} Machine interrupt delegation register.
+			\item \textbf{mie (0x304):} Machine interrupt-enable register.
+			\item \textbf{mtvec (0x305):} Machine trap-handler base address.
+			\item \textbf{mcounteren (0x306):} Machine counter enable.
+		\end{itemize}
+	
+	\subsubsection{Machine Trap Handling CSRs}
+		\begin{itemize}
+			\item \textbf{mscratch (0x340):} Machine scratch register.
+			\item \textbf{mepc (0x341):} Program counter saved at the time of the trap.
+			\item \textbf{mcause (0x342):} Reason for the trap (Interrupt/Exception code).
+			\item \textbf{mtval (0x343):} Machine trap value.
+			\item \textbf{mip (0x344):} Machine interrupt pending.
+			\item \textbf{mtinst (0x34A):} Machine trap instruction (transformed
+			\item \textbf{mtval2 (0x34B):} Machine second trap value.
+		\end{itemize}
+	
+	\subsubsection{Supervisor Trap Setup CSRs}
+		\begin{itemize}
+			\item \textbf{sstatus (0x100):} Restricted view/alias of \textit{mstatus}.
+			\item \textbf{sie (0x104):} Machine exception delegation register.
+			\item \textbf{stvec (0x105):} Base address for S-mode trap handlers.
+			\item \textbf{scounteren (0x106):} Supervisor counter enable.
+		\end{itemize}
+	
+	\subsubsection{Supervisor Trap Handling CSRs}
+		\begin{itemize}
+			\item \textbf{sscratch (0x140):} Supervisor scratch register.
+			\item \textbf{sepc (0x141):} Saved program counter for S-mode.
+			\item \textbf{scause (0x142):} Supervisor trap cause.
+			\item \textbf{stval (0x143):} Supervisor trap value
+			\item \textbf{sip (0x144):} Supervisor interrupt pending.
+			\item \textbf{scountovf (0xDA0):} Supervisor count overflow.
+		\end{itemize}
+
+\subsection{Mascine mode CSR desriptions} % cap 3
+	\subsubsection{Machine Status (mstatus and mstatush) Registers}
+		The mstatus register tracks and controls the current operating state of the hart, including global interrupt enables and privilege levels.
+		It is crucial for context switching because it preserves previous states during transitions to and from trap handlers.
+		Additionally, it manages the status of architectural extensions like floating-point and vector units.
+		
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				% ROW 2: Bits 63 to 48
+				\bitbox[]{1}{\tiny 63} & \bitbox[]{1}{\tiny 62} & \bitbox[]{13}{} & \bitbox[]{1}{\tiny 48} \\
+				\bitbox{1}{\tiny SD} & \bitbox{15}{\tiny WPRI} \\
+				\\[-2ex]
+				
+				% ROW 2: Bits 47 to 32
+				\bitbox[]{1}{\tiny 47} & \bitbox[]{3}{} & \bitbox[]{1}{\tiny 43} & \bitbox[]{1}{\tiny 42} & \bitbox[]{1}{\tiny 41} & \bitbox[]{1}{\tiny 40} & \bitbox[]{1}{\tiny 39} & \bitbox[]{1}{\tiny 38} & \bitbox[]{1}{\tiny 37} & \bitbox[]{1}{\tiny 36} & \bitbox[]{1}{\tiny 35} & \bitbox[]{1}{\tiny 34} & \bitbox[]{1}{\tiny 33} & \bitbox[]{1}{\tiny 32} \\
+				\bitbox{5}{\tiny WPRI} & \bitbox{1}{\tiny MDT} & \bitbox{1}{\tiny MPELP} & \bitbox{1}{\tiny WPRI} & \bitbox{1}{\tiny MPV} & \bitbox{1}{\tiny GVA} & \bitbox{1}{\tiny MBE} & \bitbox{1}{\tiny SBE} & \bitbox{2}{\tiny SXL[1:0]} & \bitbox{2}{\tiny UXL[1:0]} \\
+				\\[-2ex]
+				
+				% ROW 3: Bits 31 to 16
+				\bitbox[]{1}{\tiny 31} & \bitbox[]{5}{} & \bitbox[]{1}{\tiny 25} & \bitbox[]{1}{\tiny 24} & \bitbox[]{1}{\tiny 23} & \bitbox[]{1}{\tiny 22} & \bitbox[]{1}{\tiny 21} & \bitbox[]{1}{\tiny 20} & \bitbox[]{1}{\tiny 19} & \bitbox[]{1}{\tiny 18} & \bitbox[]{1}{\tiny 17} & \bitbox[]{1}{\tiny 16} \\
+				\bitbox{7}{\tiny WPRI} & \bitbox{1}{\tiny SDT} & \bitbox{1}{\tiny SPELP} & \bitbox{1}{\tiny TSR} & \bitbox{1}{\tiny TW} & \bitbox{1}{\tiny TVM} & \bitbox{1}{\tiny MXR} & \bitbox{1}{\tiny SUM} & \bitbox{1}{\tiny MPRV} & \bitbox{1}{\tiny XS[1:0]} \\
+				\\[-2ex]
+				
+				
+				% ROW 4: Bits 15 to 0
+				\bitbox[]{1}{\tiny 15} & \bitbox[]{1}{\tiny 14} & \bitbox[]{1}{\tiny 13} & \bitbox[]{1}{\tiny 12} & \bitbox[]{1}{\tiny 11} & \bitbox[]{1}{\tiny 10} & \bitbox[]{1}{\tiny 9} & \bitbox[]{1}{\tiny 8} & \bitbox[]{1}{\tiny 7} & \bitbox[]{1}{\tiny 6} & \bitbox[]{1}{\tiny 5} & \bitbox[]{1}{\tiny 4} & \bitbox[]{1}{\tiny 3} & \bitbox[]{1}{\tiny 2} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 0} \\
+				\bitbox{1}{\tiny XS[1:0]} & \bitbox{2}{\tiny FS[1:0]} & \bitbox{2}{\tiny MPP[1:0]} & \bitbox{2}{\tiny VS[1:0]} & \bitbox{1}{\tiny SPP} & \bitbox{1}{\tiny MPIE} & \bitbox{1}{\tiny UBE} & \bitbox{1}{\tiny SPIE} & \bitbox{1}{\tiny WPRI} & \bitbox{1}{\tiny MIE} & \bitbox{1}{\tiny WPRI} & \bitbox{1}{\tiny SIE} & \bitbox{1}{\tiny WPRI}
+				
+			\end{bytefield}
+			\caption{Machine-mode status (\texttt{mstatus}) register for RV64.}
+		\end{figure}
+	
+	\subsubsection{Machine Trap-Vector Base-Address (mtvec) Register}
+		The mtvec register holds the base address and mode configuration used by the hardware when a trap enters Machine mode.
+		It supports both Direct mode for single-address jumps and Vectored mode for specific interrupt offsets.
+		Proper setup is essential for ensuring the system can accurately respond to exceptions and hardware events.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=4ex]{16}
+				
+				% HEADER
+				\bitbox[]{2}{\raggedright \tiny MXLEN-1} & \bitbox[]{11}{} & \bitbox[]{1}{\tiny 2} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 0} \\
+				
+				% BODY
+				\bitbox{14}{\tiny BASE[MXLEN-1:2] (WARL)} & \bitbox{2}{\tiny MODE (WARL)} \\
+				
+				% FOOTER
+				\bitbox[]{14}{\tiny MXLEN-2} & \bitbox[]{2}{\tiny 2}
+				
+			\end{bytefield}
+			\caption{Encoding of \texttt{mtvec} MODE field.}
+		\end{figure}
+	
+	\subsubsection{Machine Trap Delegation (medeleg and mideleg) Registers}
+		The medeleg register allows specific synchronous exceptions to be delegated to a lower privilege mode, such as Supervisor mode.
+		By setting bits here, the hardware avoids unnecessary transitions into Machine mode for common events like page faults.
+		This significantly reduces software overhead in systems running a full operating system.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{1}{\raggedright \tiny 63} & \bitbox[]{14}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny Synchronous Exceptions (WARL)} \\
+				
+				\bitbox[]{16}{\tiny 64}
+				
+			\end{bytefield}
+			\caption{Machine Exception Delegation (\texttt{medeleg}) register.}
+			\label{fig:medeleg}
+		\end{figure}
+		
+		The mideleg register functions similarly to its exception counterpart by delegating specific hardware interrupts to the Supervisor level.
+		When a delegated interrupt occurs, the hardware automatically jumps to the S-mode trap handler instead of the M-mode one.
+		This is a foundational feature for building efficient operating systems that handle their own timing and I/O.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny MXLEN-1} & \bitbox[]{13}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny Interrupts (WARL)} \\
+				
+				\bitbox[]{16}{\tiny MXLEN}
+				
+			\end{bytefield}
+			\caption{Machine Interrupt Delegation (\texttt{mideleg}) Register.}
+			\label{fig:mideleg}
+		\end{figure}
+	
+	\subsubsection{Machine Interrupt (mip and mie) Registers}
+		The mip register contains bits that indicate which interrupts are currently pending at the Machine level, reflecting the real-time status of hardware signals.
+		While some bits are read-only hardware indicators, others can be toggled by software to trigger inter-processor interrupts.
+		Monitoring this register allows a kernel to prioritize and service various pending event requests effectively.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny MXLEN-1} & \bitbox[]{13}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny Interrupts (WARL)} \\
+				
+				\bitbox[]{16}{\tiny MXLEN}
+				
+			\end{bytefield}
+			\caption{Machine Interrupt-Pending (\texttt{mip}) register.}
+			\label{fig:mip}
+		\end{figure}
+		
+		The mie register provides individual enable bits for each interrupt source recognized by the hart at the Machine level.
+		It works alongside the global enable bit in the status register to determine if a pending interrupt should actually be serviced.
+		Controlling these bits allows for fine-grained management of system responsiveness and priority.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny MXLEN-1} & \bitbox[]{13}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny Interrupts (WARL)} \\
+				
+				\bitbox[]{16}{\tiny MXLEN}
+				
+			\end{bytefield}
+			\caption{Machine Interrupt-Enable (\texttt{mie}) register.}
+			\label{fig:mie}
+		\end{figure}
+		\subsubsection{Machine Counter-Enable (mcounteren) Register}
+		
+		The mcounteren register determines whether hardware performance counters are accessible from lower privilege modes.
+		Machine mode uses this register to permit or restrict access to cycle counts and instruction metrics for security and privacy reasons.
+		This provides a primary defense against side-channel attacks that rely on high-precision hardware timing.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{1}{\tiny 31} & \bitbox[]{1}{\tiny 30} & \bitbox[]{1}{\tiny 29} & \bitbox[]{1}{\tiny 28} & \bitbox[]{5}{} & \bitbox[]{1}{\tiny 6} & \bitbox[]{1}{\tiny 5} & \bitbox[]{1}{\tiny 4} & \bitbox[]{1}{\tiny 3} & \bitbox[]{1}{\tiny 2} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 0} \\
+				
+				\bitbox{1}{\tiny HPM31} & \bitbox{1}{\tiny HPM30} & \bitbox{1}{\tiny HPM29} & \bitbox{7}{\tiny ...} & \bitbox{1}{\tiny HPM5} & \bitbox{1}{\tiny HPM4} & \bitbox{1}{\tiny HPM3} & \bitbox{1}{\tiny IR} & \bitbox{1}{\tiny TM} & \bitbox{1}{\tiny CY} \\
+				
+				\bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{7}{\tiny 23} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1}
+				
+			\end{bytefield}
+			\caption{Counter-enable (\texttt{mcounteren}) register.}
+			\label{fig:mcounteren}
+		\end{figure}
+	
+	\subsubsection{Machine Counter-Inhibit (mcountinhibit) Register}
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{1}{\tiny 31} & \bitbox[]{1}{\tiny 30} & \bitbox[]{1}{\tiny 29} & \bitbox[]{1}{\tiny 28} & \bitbox[]{5}{} & \bitbox[]{1}{\tiny 6} & \bitbox[]{1}{\tiny 5} & \bitbox[]{1}{\tiny 4} & \bitbox[]{1}{\tiny 3} & \bitbox[]{1}{\tiny 2} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 0} \\
+				
+				\bitbox{1}{\tiny HPM31} & \bitbox{1}{\tiny HPM30} & \bitbox{1}{\tiny HPM29} & \bitbox{7}{\tiny ...} & \bitbox{1}{\tiny HPM5} & \bitbox{1}{\tiny HPM4} & \bitbox{1}{\tiny HPM3} & \bitbox{1}{\tiny IR} & \bitbox{1}{\tiny 0} & \bitbox{1}{\tiny CY} \\
+				
+				\bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{7}{\tiny 23} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1}
+				
+			\end{bytefield}
+			\caption{Counter-enable (\texttt{mcountinhibit}) register.}
+			\label{fig:mcountinhibit}
+		\end{figure}
+		
+	\subsubsection{Machine Scratch (mscratch) Register}
+		The mscratch register typically holds a pointer to a hart-local context space used during Machine-mode trap handling.
+		Software often swaps its contents with a general-purpose register at the start of a trap to provide a safe "scratch pad" for saving the current state.
+		This mechanism ensures that the trap handler can operate without corrupting any data belonging to the interrupted program.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny MXLEN-1} & \bitbox[]{13}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny mscratch} \\
+				
+				\bitbox[]{16}{\tiny MXLEN}
+				
+			\end{bytefield}
+			\caption{Machine-mode scratch register.}
+			\label{fig:mscratch}
+		\end{figure}
+	
+	\subsubsection{Machine Exception Program Counter (mepc) Register}
+		The mepc register automatically saves the address of the interrupted instruction whenever a trap is taken into Machine mode.
+		It serves as the target address for the mret instruction, allowing the processor to resume execution exactly where it stopped.
+		Software can also manually modify this value to redirect program flow after handling a specific exception.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny MXLEN-1} & \bitbox[]{13}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny mepc} \\
+				
+				\bitbox[]{16}{\tiny MXLEN}
+				
+			\end{bytefield}
+			\caption{Machine exception program counter register.}
+			\label{fig:mepc}
+		\end{figure}
+	
+	\subsubsection{Machine Cause (mcause) Register}
+		The mcause register identifies the specific reason for a trap by storing an interrupt bit and a unique exception code.
+		It allows the trap handler to quickly differentiate between timer interrupts, external interrupts, and various synchronous exceptions.
+		This information is the primary key used by software to dispatch the correct service routine for the event.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny MXLEN-1} & \bitbox[]{2}{\raggedright \tiny MXLEN-2} & \bitbox[]{11}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{2}{\tiny Interrupt} & \bitbox{14}{\tiny Exception Code (WLRL)} \\
+				
+				\bitbox[]{2}{\tiny 1} & \bitbox[]{14}{\tiny MXLEN-1}
+				
+			\end{bytefield}
+			\caption{Machine Cause (\texttt{mcause}) register.}
+			\label{fig:mcause}
+		\end{figure}
+	
+	\subsubsection{Machine Trap Value (mtval) Register}
+		The mtval register provides auxiliary information about a trap, such as the faulting memory address during a page fault.
+		This specific context is vital for the operating system to diagnose the failure and take appropriate corrective action.
+		It complements the cause register by adding the necessary "where" or "what" to the "why" of the trap.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny MXLEN-1} & \bitbox[]{13}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny mtval} \\
+				
+				\bitbox[]{16}{\tiny MXLEN}
+				
+			\end{bytefield}
+			\caption{Machine Trap Value (\texttt{mtval}) register.}
+			\label{fig:mtval}
+		\end{figure}
+
+\subsection{Machine mode CSR desriptions}	% cap 12
+	\subsubsection{Memory Privilege in sstatus Register}
+		The sstatus register is the Supervisor-level version of the status register, tracking the hart’s state during S-mode execution.
+		It mirrors several fields from the Machine-mode status register but is restricted to functionality relevant to the operating system kernel.
+		Kernels use it to manage global interrupts and track previous privilege states during trap returns.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{1}{\tiny 63} & \bitbox[]{1}{\tiny 62} & \bitbox[]{13}{} & \bitbox[]{1}{\tiny 48} \\
+				\bitbox{1}{\tiny SD} & \bitbox{15}{\tiny WPRI} \\
+				\\[-1.5ex] 
+				
+				\bitbox[]{1}{\tiny 47} & \bitbox[]{12}{} & \bitbox[]{1}{\tiny 34} & \bitbox[]{1}{\tiny 33} & \bitbox[]{1}{\tiny 32} \\
+				\bitbox{14}{\tiny WPRI} & \bitbox{2}{\tiny UXL[1:0]} \\
+				\\[-1.5ex]
+				
+				\bitbox[]{1}{\tiny 31} & \bitbox[]{5}{} & \bitbox[]{1}{\tiny 25} & \bitbox[]{1}{\tiny 24} & \bitbox[]{1}{\tiny 23} & \bitbox[]{1}{\tiny 22} & \bitbox[]{1}{} & \bitbox[]{1}{\tiny 20} & \bitbox[]{1}{\tiny 19} & \bitbox[]{1}{\tiny 18} & \bitbox[]{1}{\tiny 17} & \bitbox[]{1}{\tiny 16} \\
+				\bitbox{7}{\tiny WPRI} & \bitbox{1}{\tiny SDT} & \bitbox{1}{\tiny SPELP} & \bitbox{3}{\tiny WPRI} & \bitbox{1}{\tiny MXR} & \bitbox{1}{\tiny SUM} & \bitbox{1}{\tiny WPRI} & \bitbox{1}{\tiny XS[1:0]} \\
+				\\[-1.5ex]
+				
+				\bitbox[]{1}{\tiny 15} & \bitbox[]{1}{\tiny 14} & \bitbox[]{1}{\tiny 13} & \bitbox[]{1}{\tiny 12} & \bitbox[]{1}{\tiny 11} & \bitbox[]{1}{\tiny 10} & \bitbox[]{1}{\tiny 9} & \bitbox[]{1}{\tiny 8} & \bitbox[]{1}{\tiny 7} & \bitbox[]{1}{\tiny 6} & \bitbox[]{1}{\tiny 5} & \bitbox[]{1}{\tiny 4} & \bitbox[]{1}{} & \bitbox[]{1}{\tiny 2} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 0} \\
+				\bitbox{1}{\tiny XS[1:0]} & \bitbox{2}{\tiny FS[1:0]} & \bitbox{2}{\tiny WPRI} & \bitbox{2}{\tiny VS[1:0]} & \bitbox{1}{\tiny SPP} & \bitbox{1}{\tiny WPRI} & \bitbox{1}{\tiny UBE} & \bitbox{1}{\tiny SPIE} & \bitbox{3}{\tiny WPRI} & \bitbox{1}{\tiny SIE} & \bitbox{1}{\tiny WPRI}
+				
+			\end{bytefield}
+			\caption{Supervisor-mode status (\texttt{sstatus}) register when $SXLEN=64$.}
+			\label{fig:sstatus}
+		\end{figure}
+	
+	\subsubsection{Supervisor Trap Vector Base Address (stvec) Register}
+		The stvec register functions as the Supervisor-mode trap vector register, holding the entry point address for S-mode exception handlers.
+		Just like its Machine-mode counterpart, it can be configured for either Direct or Vectored trap handling modes.
+		This ensures that the OS kernel can catch and process its own traps independently of the higher-level firmware.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{1}{\raggedright \tiny SXLEN-1} & \bitbox[]{12}{} & \bitbox[]{1}{\tiny 2} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 0} \\
+				
+				\bitbox{14}{\tiny BASE[SXLEN-1:2] (WARL)} & \bitbox{2}{\tiny MODE (WARL)} \\
+				
+				\bitbox[]{14}{\tiny SXLEN-2} & \bitbox[]{2}{\tiny 2}
+				
+			\end{bytefield}
+			\caption{Supervisor trap vector base address (\texttt{stvec}) register.}
+			\label{fig:stvec}
+		\end{figure}
+	
+	\subsubsection{Supervisor Interrupt (sip and sie) Registers}
+		The sip register shows which interrupts are currently pending at the Supervisor level, acting as a subset of the Machine-level interrupt status.
+		It allows the kernel to check for incoming software or timer interrupts that have been delegated to it by the Machine mode.
+		This is the primary way an operating system monitors its own asynchronous events.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny SXLEN-1} & \bitbox[]{13}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny Interrupts (WARL)} \\
+				
+				\bitbox[]{16}{\tiny SXLEN}
+				
+			\end{bytefield}
+			\caption{Supervisor interrupt-pending register (\texttt{sip}).}
+			\label{fig:sip}
+		\end{figure}
+		
+		The sie register provides individual enable bits for interrupts that are visible to and manageable by the Supervisor level.
+		The kernel uses this register to mask or unmask specific interrupt sources according to its current execution priority or state.
+		Proper management here is essential for maintaining kernel stability and preventing undesired interrupt recursion.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny SXLEN-1} & \bitbox[]{13}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny Interrupts (WARL)} \\
+				
+				\bitbox[]{16}{\tiny SXLEN}
+				
+			\end{bytefield}
+			\caption{Supervisor interrupt-enable register (\texttt{sie}).}
+			\label{fig:sie}
+		\end{figure}
+	
+	\subsubsection{Counter-Enable (scounteren) Register}
+		The scounteren register allows Supervisor mode to control whether User-mode applications can access hardware performance counters.
+		It mirrors the functionality of the Machine-mode version, letting the OS selectively expose metrics like instruction counts to user programs.
+		This provides a layered security approach to performance monitoring within the application environment.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{1}{\tiny 31} & \bitbox[]{1}{\tiny 30} & \bitbox[]{1}{\tiny 29} & \bitbox[]{1}{\tiny 28} & \bitbox[]{5}{} & \bitbox[]{1}{\tiny 6} & \bitbox[]{1}{\tiny 5} & \bitbox[]{1}{\tiny 4} & \bitbox[]{1}{\tiny 3} & \bitbox[]{1}{\tiny 2} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 0} \\
+				
+				\bitbox{1}{\tiny HPM31} & \bitbox{1}{\tiny HPM30} & \bitbox{1}{\tiny HPM29} & \bitbox{7}{\tiny ...} & \bitbox{1}{\tiny HPM5} & \bitbox{1}{\tiny HPM4} & \bitbox{1}{\tiny HPM3} & \bitbox{1}{\tiny IR} & \bitbox{1}{\tiny TM} & \bitbox{1}{\tiny CY} \\
+				
+				\bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{7}{\tiny 23} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1} & \bitbox[]{1}{\tiny 1}
+				
+			\end{bytefield}
+			\caption{Counter-enable (\texttt{scounteren}) register.}
+			\label{fig:scounteren}
+		\end{figure}
+	
+	\subsubsection{Supervisor Scratch (sscratch) Register}
+		The sscratch register is a dedicated scratch register used by the Supervisor-mode trap handler to facilitate quick state saving.
+		The kernel typically stores a pointer to per-CPU data or a kernel stack here to avoid using general-purpose registers before they are saved.
+		This provides a vital "bridge" to a safe execution environment when a trap occurs in user space.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny SXLEN-1} & \bitbox[]{13}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny sscratch} \\
+				
+				\bitbox[]{16}{\tiny SXLEN}
+				
+			\end{bytefield}
+			\caption{Supervisor Scratch Register.}
+			\label{fig:sscratch}
+		\end{figure}
+	
+	\subsubsection{Supervisor Exception Program Counter (sepc) Register}
+		The sepc register automatically saves the address of the instruction that was interrupted when a trap enters Supervisor mode.
+		It provides the return address needed by the sret instruction to resume normal program execution after the kernel finishes its task.
+		It is the S-mode functional equivalent to the Machine-mode exception program counter.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny SXLEN-1} & \bitbox[]{13}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny sepc} \\
+				
+				\bitbox[]{16}{\tiny SXLEN}
+				
+			\end{bytefield}
+			\caption{Supervisor exception program counter register.}
+			\label{fig:sepc}
+		\end{figure}
+	
+	\subsubsection{Supervisor Cause (scause) Register}
+		The scause register stores the interrupt or exception code for traps that are handled within Supervisor mode.
+		It is the central piece of data used by the kernel's trap entry point to dispatch control to the specific handler function.
+		It allows the OS to distinguish between system calls from user space and various hardware interrupts.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=3ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny SXLEN-1} & \bitbox[]{2}{\raggedright \tiny SXLEN-2} & \bitbox[]{11}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{2}{\tiny Interrupt} & \bitbox{14}{\tiny Exception Code (WLRL)} \\
+				
+				\bitbox[]{2}{\tiny 1} & \bitbox[]{14}{\tiny SXLEN-1}
+				
+			\end{bytefield}
+			\caption{Supervisor Cause (\texttt{scause}) register.}
+			\label{fig:scause}
+		\end{figure}
+	
+	\subsubsection{Supervisor Trap Value (stval) Register}
+		The stval register holds auxiliary data for Supervisor-mode traps, such as the specific virtual address that caused a page fault.
+		This information is indispensable for the kernel's memory management system to resolve faults or log access errors.
+		It provides the necessary context to handle user-space exceptions effectively without requiring Machine-mode intervention.
+		
+		\begin{figure}[!htbp]
+			\centering
+			\begin{bytefield}[bitwidth=0.06\textwidth, bitheight=4ex]{16}
+				
+				\bitbox[]{2}{\raggedright \tiny SXLEN-1} & \bitbox[]{13}{} & \bitbox[]{1}{\raggedleft \tiny 0} \\
+				
+				\bitbox{16}{\tiny stval} \\
+				
+				\bitbox[]{16}{\tiny SXLEN}
+				
+			\end{bytefield}
+			\caption{Supervisor Trap Value register.}
+			\label{fig:stval}
+		\end{figure}

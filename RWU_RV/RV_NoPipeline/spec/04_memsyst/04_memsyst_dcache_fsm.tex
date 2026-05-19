@@ -1,0 +1,524 @@
+% ─────────────────────────────────────────────────────────────────────────────
+% D-Cache Controller FSM + Scratchpad FSM
+% Sources: ip_dcache/src/asDCache.sv, ip_scratch/src/asScratch.sv
+% ─────────────────────────────────────────────────────────────────────────────
+
+\paragraph{D-Cache FSM overview.}
+The \texttt{asDCache} module implements a write-back, write-allocate
+4-way set-associative cache with a full 11-state Moore-FSM
+(Fig.~\ref{fig:asDCacheFsm01}).
+The three columns in the figure reflect the three independent activity
+paths:
+
+\begin{itemize}
+  \item \textbf{Centre column (normal cache path):}
+    \textsc{Idle} $\to$ \textsc{Lookup} $\to$ \textsc{Miss} $\to$
+    \textsc{Fill} $\to$ \textsc{Fill\_Resp} $\to$ \textsc{Idle}.
+  \item \textbf{Left column (dirty-eviction path):}
+    \textsc{Evict\_AW} $\to$ \textsc{Evict\_W} $\to$ \textsc{Evict\_B};
+    entered from \textsc{Lookup} (miss on dirty victim) or from the
+    flush path.
+  \item \textbf{Right column (flush path):}
+    \textsc{Flush} $\to$ \textsc{Flush\_Evict\_Prep} $\to$
+    \textsc{Evict\_AW}; entered from \textsc{Idle} on
+    \texttt{dc\_flush\_i}.
+\end{itemize}
+
+\noindent
+The \texttt{ERR} state (reached from \textsc{Fill} and \textsc{Evict\_B}
+on AXI4 error response) returns unconditionally to \textsc{Idle}.
+Self-loops that keep a state while an AXI4 handshake is pending
+(\textsc{Miss}, \textsc{Evict\_AW}, \textsc{Evict\_B}) are shown for
+completeness.
+$\mathit{flush\_mode\_r}$ is a one-bit register that distinguishes
+a normal dirty-victim eviction from a flush-triggered write-back.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.98\textwidth}{!}{%
+\begin{tikzpicture}[shorten >=1pt, node distance=1pt, auto,
+  every state/.style={fill=blue!10}, initial text=]
+
+  % ── Absolute positions (cm): three-column layout ─────────────────────────
+  % Col A (eviction): x = -6
+  % Col B (main):     x =  0
+  % Col C (flush):    x =  6
+  % Rows:             y = 0, -3, -6, -9, -12
+
+  % ── State nodes ──────────────────────────────────────────────────────────
+
+  % Centre column
+  \node[state with output, initial above, accepting] (idle) at (0,0)
+    { \texttt{IDLE}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}0
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (lookup) at (0,-3)
+    { \texttt{LOOKUP}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (miss) at (0,-6)
+    { \texttt{MISS}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1 \\
+        \mathit{arvalid}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (fill) at (0,-9)
+    { \texttt{FILL}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1 \\
+        \mathit{rready}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (fill_resp) at (0,-12)
+    { \texttt{FILL\_RESP}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}0 \\
+        \mathit{rvalid}{=}{\neg}\mathit{wr}
+      \end{array}$\end{tiny}
+    };
+
+  % Left column (eviction chain)
+  \node[state with output] (evict_aw) at (-6,-3)
+    { \texttt{EVICT\_AW}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1 \\
+        \mathit{awvalid}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (evict_w) at (-6,-6)
+    { \texttt{EVICT\_W}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1 \\
+        \mathit{wvalid}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (evict_b) at (-6,-9)
+    { \texttt{EVICT\_B}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1 \\
+        \mathit{bready}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  % Right column (flush path)
+  \node[state with output] (flush) at (6,0)
+    { \texttt{FLUSH}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (flush_ep) at (6,-3)
+    { \texttt{FLUSH\_EVICT\_PREP}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  % ERR (right of FILL)
+  \node[state with output] (err) at (5,-9)
+    { \texttt{ERR}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{err}{=}1 \\
+        \mathit{stall}{=}0
+      \end{array}$\end{tiny}
+    };
+
+  % ── Transitions ───────────────────────────────────────────────────────────
+
+  \path[->]
+
+    % IDLE
+    (idle)
+      edge [loop left]
+        node [left] {\scriptsize $\neg\mathit{req}{\wedge}\neg\mathit{flush}$}
+        (idle)
+      edge
+        node [left] {\scriptsize $\mathit{dc\_req}$}
+        (lookup)
+      edge
+        node [above] {\scriptsize $\mathit{dc\_flush}$}
+        (flush)
+
+    % LOOKUP
+    (lookup)
+      edge [bend right=35]
+        node [right] {\scriptsize $\mathit{hit}$}
+        (idle)
+      edge
+        node [left]  {\scriptsize $\neg\mathit{hit}{\wedge}\neg\mathit{dirty}$}
+        (miss)
+      edge
+        node [above] {\scriptsize $\neg\mathit{hit}{\wedge}\mathit{dirty\_victim}$}
+        (evict_aw)
+
+    % EVICT_AW
+    (evict_aw)
+      edge [loop left]
+        node [left] {\scriptsize $\neg\mathit{awready}$}
+        (evict_aw)
+      edge
+        node [left] {\scriptsize $\mathit{awready}$}
+        (evict_w)
+
+    % EVICT_W
+    (evict_w)
+      edge [loop left]
+        node [left] {\scriptsize $\mathit{wready}{\wedge}\neg\mathit{wlast}$}
+        (evict_w)
+      edge
+        node [left] {\scriptsize $\mathit{wready}{\wedge}\mathit{wlast}$}
+        (evict_b)
+
+    % EVICT_B
+    (evict_b)
+      edge [loop left]
+        node [left] {\scriptsize $\neg\mathit{bvalid}$}
+        (evict_b)
+      edge [bend left=20]
+        node [below right] {\scriptsize $\mathit{bvalid}{\wedge}\mathit{ok}{\wedge}\neg\mathit{fm}$}
+        (miss)
+      edge [out=60, in=220]
+        node [below] {\scriptsize $\mathit{bvalid}{\wedge}\mathit{ok}{\wedge}\mathit{fm}{\wedge}\mathit{more}$}
+        (flush)
+      edge [out=85, in=200]
+        node [left] {\scriptsize $\mathit{bvalid}{\wedge}\mathit{ok}{\wedge}\mathit{fm}{\wedge}\mathit{done}$}
+        (idle)
+      edge
+        node [below] {\scriptsize $\mathit{bvalid}{\wedge}\mathit{bresp}{\neq}0$}
+        (err)
+
+    % MISS
+    (miss)
+      edge [loop right]
+        node [right] {\scriptsize $\neg\mathit{arready}$}
+        (miss)
+      edge
+        node [left] {\scriptsize $\mathit{arready}$}
+        (fill)
+
+    % FILL
+    (fill)
+      edge [loop left]
+        node [left] {\scriptsize $\mathit{rvalid}{\wedge}\neg\mathit{rlast}$}
+        (fill)
+      edge
+        node [left]
+        {\scriptsize $\mathit{rvalid}{\wedge}\mathit{rlast}{\wedge}\mathit{ok}$}
+        (fill_resp)
+      edge [out=0, in=270]
+        node [right] {\scriptsize $\mathit{rvalid}{\wedge}\mathit{rresp}{\neq}0$}
+        (err)
+
+    % FILL_RESP
+    (fill_resp)
+      edge [bend right=65]
+        node [right] {\scriptsize $\mathbf{1}$}
+        (idle)
+
+    % ERR
+    (err)
+      edge [out=100, in=330]
+        node [right] {\scriptsize $\mathbf{1}$}
+        (idle)
+
+    % FLUSH
+    (flush)
+      edge
+        node [right] {\scriptsize $\mathit{dirty}$}
+        (flush_ep)
+      edge [loop right]
+        node [right] {\scriptsize $\neg\mathit{dirty}{\wedge}\mathit{more}$}
+        (flush)
+      edge [bend right=20]
+        node [above] {\scriptsize $\neg\mathit{dirty}{\wedge}\mathit{done}$}
+        (idle)
+
+    % FLUSH_EVICT_PREP
+    (flush_ep)
+      edge [bend right=40]
+        node [below] {\scriptsize $\mathbf{1}$}
+        (evict_aw);
+
+\end{tikzpicture}
+}% end resizebox
+\caption{Moore-FSM: \texttt{asDCache} Data Cache Controller
+  (\texttt{ip\_dcache/src/asDCache.sv}).
+  \textbf{Abbreviations on edges:}
+  $\mathit{dirty\_victim}$: victim way is valid \emph{and} dirty;
+  $\mathit{fm}$ (\texttt{flush\_mode\_r}): eviction was triggered by a
+  flush, not a normal miss;
+  $\mathit{more}$: flush iterator has not yet scanned all sets/ways;
+  $\mathit{done}$: flush complete (all sets/ways iterated);
+  $\mathit{ok}$: AXI4 response is OKAY ($\mathit{bresp}{=}0$ or
+  $\mathit{rresp}{=}0$);
+  $\mathit{wr}$: the CPU request was a store (\texttt{lk\_wr\_r}).
+  \textbf{Outputs} $\mathit{rvalid}{=}{\neg}\mathit{wr}$ in
+  \textsc{Fill\_Resp}: only a load returns data to the CPU.
+  Self-loop label \textbf{1} denotes an unconditional single-cycle
+  transition.}
+\label{fig:asDCacheFsm01}
+\end{figure}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\paragraph{State-by-state description of \texttt{asDCache}:}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\begin{description}
+
+  \item[\texttt{IDLE}]
+    The cache is ready for a new CPU request.
+    \texttt{dc\_stall\_o} is de-asserted.
+    On \texttt{dc\_flush\_i}: initialise \texttt{flush\_idx\_r} and
+    \texttt{flush\_way\_r} to zero, assert stall, go to \textsc{Flush}.
+    On \texttt{dc\_req\_i}: latch the full request (address, size, wr,
+    wdata, wstrb) into the \texttt{lk\_*\_r} register bank; present
+    \texttt{req\_idx\_s} to the data and tag SRAM read ports; assert
+    stall; go to \textsc{Lookup}.
+
+  \item[\texttt{LOOKUP}]
+    Registered SRAM output (\texttt{data\_rdata\_s}, \texttt{tag\_rdata\_s})
+    is valid from the previous-cycle read initiated in \textsc{Idle}.
+    Combinatorial valid/dirty arrays (\texttt{vd\_valid\_s},
+    \texttt{vd\_dirty\_s}) are read via \texttt{lk\_idx\_r}.
+    \begin{itemize}
+      \item \textbf{Hit:}
+        update PLRU.
+        \emph{Read hit} -- extract and sign/zero-extend the double word
+        selected by \texttt{lk\_dw\_sel\_r}; assert \texttt{dc\_rdata\_o},
+        \texttt{dc\_rvalid\_o}; de-assert stall; return to \textsc{Idle}.
+        \emph{Write hit} -- merge write data into the cache line via
+        \texttt{merge\_write()}; set dirty bit through the combinatorial
+        SRAM write-port; de-assert stall; return to \textsc{Idle}.
+        In both cases total latency is \textbf{2 cycles}.
+      \item \textbf{Miss, clean victim:}
+        no write-back needed; drive AXI4 AR with the line-aligned miss
+        address; assert \texttt{ar\_valid\_r}; go to \textsc{Miss}.
+      \item \textbf{Miss, dirty victim:}
+        write-back required; latch the eviction line
+        (\texttt{evict\_line\_r}) from the registered SRAM output; drive
+        AXI4 AW channel; assert \texttt{aw\_valid\_r};
+        clear \texttt{flush\_mode\_r}; go to \textsc{Evict\_AW}.
+    \end{itemize}
+
+  \item[\texttt{EVICT\_AW}]
+    AXI4 AW-channel handshake: \texttt{awvalid} held high until
+    \texttt{awready} is asserted by the interconnect.
+    On acknowledgement: clear \texttt{aw\_valid\_r}; go to
+    \textsc{Evict\_W}.
+
+  \item[\texttt{EVICT\_W}]
+    AXI4 W-channel data phase: \texttt{wvalid} is driven high
+    (combinatorial from state).
+    The eviction line (\texttt{evict\_line\_r}, 256\,bit) is streamed in
+    four 64-bit beats; \texttt{beat\_r} counts 0\ldots{}3.
+    On each \texttt{wready}: increment \texttt{beat\_r} until
+    $\mathit{beat\_r}{=}3$ (\texttt{wlast} asserted); go to
+    \textsc{Evict\_B}.
+
+  \item[\texttt{EVICT\_B}]
+    AXI4 B-channel response: \texttt{bready} held high; FSM waits for
+    \texttt{bvalid}.
+    On \texttt{bvalid}:
+    \begin{itemize}
+      \item $\mathit{bresp}{\neq}0$: assert \texttt{dc\_err\_o};
+        de-assert stall; go to \textsc{Err}.
+      \item $\mathit{bresp}{=}0$ and $\neg\mathit{flush\_mode\_r}$
+        (normal miss eviction): proceed to fill the line; drive AR
+        channel; go to \textsc{Miss}.
+      \item $\mathit{bresp}{=}0$ and $\mathit{flush\_mode\_r}$ and
+        more flush work remains (\texttt{flush\_way\_r} or
+        \texttt{flush\_idx\_r} not exhausted): invalidate the evicted
+        line via the combinatorial write-port; advance the flush
+        pointer; go back to \textsc{Flush}.
+      \item $\mathit{bresp}{=}0$ and $\mathit{flush\_mode\_r}$ and all
+        sets/ways exhausted: assert \texttt{dc\_flush\_done\_o};
+        de-assert stall; go to \textsc{Idle}.
+    \end{itemize}
+
+  \item[\texttt{MISS}]
+    AXI4 AR-channel handshake for a cache-line fill.
+    \texttt{arvalid} held high; waits for \texttt{arready}.
+    On acknowledgement: clear \texttt{ar\_valid\_r}; go to \textsc{Fill}.
+
+  \item[\texttt{FILL}]
+    AXI4 R-channel data phase: \texttt{rready} held high.
+    Four 64-bit beats are assembled into \texttt{fill\_buf\_r} /
+    \texttt{fill\_line\_s}.
+    \begin{itemize}
+      \item $\mathit{rresp}{\neq}0$: assert \texttt{dc\_err\_o};
+        de-assert stall; go to \textsc{Err}.
+      \item $\mathit{rvalid}{\wedge}\neg\mathit{rlast}$: store beat into
+        \texttt{fill\_buf\_r}; increment \texttt{beat\_r}; remain in
+        \textsc{Fill}.
+      \item $\mathit{rvalid}{\wedge}\mathit{rlast}{\wedge}\mathit{ok}$:
+        on the last beat the combinatorial write-port decode writes
+        data, tag, and valid bit to the SRAMs; if the original request
+        was a write-miss (\texttt{lk\_wr\_r}), the write data is merged
+        into the fill line before the SRAM write; update PLRU; for a
+        read, latch the extracted data word into \texttt{rdata\_r};
+        go to \textsc{Fill\_Resp}.
+    \end{itemize}
+
+  \item[\texttt{FILL\_RESP}]
+    One-cycle response state after a successful fill.
+    \texttt{dc\_stall\_o} is de-asserted.
+    For a load: assert \texttt{dc\_rvalid\_o} with the latched data word.
+    For a write-miss: no rdata output; the merged line has already been
+    written to the SRAM in \textsc{Fill}.
+    Return to \textsc{Idle}.
+
+  \item[\texttt{ERR}]
+    One-cycle error state.
+    \texttt{dc\_err\_o} pulsed; \texttt{dc\_stall\_o} de-asserted.
+    The affected cache line is \emph{not} written; valid bit is not set.
+    Return to \textsc{Idle}.
+
+  \item[\texttt{FLUSH}]
+    The flush iterator examines one (set, way) pair per cycle.
+    The combinatorial valid/dirty read address is driven by
+    \texttt{flush\_idx\_r} (via \texttt{vd\_rd\_addr\_s} mux).
+    \begin{itemize}
+      \item \textbf{Dirty line:} present \texttt{flush\_idx\_r} to the
+        data and tag SRAM read port (one cycle of registered latency
+        is needed); go to \textsc{Flush\_Evict\_Prep}.
+      \item \textbf{Clean or invalid line:} invalidate the line via the
+        combinatorial write-port; advance \texttt{flush\_way\_r} (then
+        \texttt{flush\_idx\_r}); remain in \textsc{Flush} until all
+        32\,$\times$\,4 = 128 entries are scanned, then assert
+        \texttt{dc\_flush\_done\_o} and return to \textsc{Idle}.
+    \end{itemize}
+
+  \item[\texttt{FLUSH\_EVICT\_PREP}]
+    One-cycle pipeline bubble that absorbs the SRAM read latency.
+    In the previous cycle (\textsc{Flush}) the SRAM read address was
+    already \texttt{flush\_idx\_r}; the registered output is now valid.
+    Latch \texttt{evict\_line\_r} from \texttt{data\_rdata\_s[flush\_way\_r]};
+    compute the eviction address from
+    \texttt{tag\_rdata\_s[flush\_way\_r]};
+    assert \texttt{aw\_valid\_r}; set \texttt{flush\_mode\_r} to
+    distinguish this write-back from a normal dirty-victim eviction;
+    go to \textsc{Evict\_AW}.
+
+\end{description}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\paragraph{Scratchpad Controller (\texttt{asScratch}) -- 2-state FSM.}
+% ─────────────────────────────────────────────────────────────────────────────
+
+The \texttt{asScratch} module connects directly to the D-Cache CPU
+interface (\texttt{as\_dcache\_if}) and provides a single-port 64-bit
+wide SRAM (\texttt{as\_sram\_sp64}) as a byte-addressable scratchpad.
+Its controller is a minimal two-state machine whose state is captured by
+the single registered bit \texttt{busy\_r} (Fig.~\ref{fig:asScratchFsm01}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[shorten >=1pt, node distance=4.0cm, on grid, auto,
+  every state/.style={fill=blue!10}, initial text=]
+
+  % ── State nodes ──────────────────────────────────────────────────────────
+
+  \node[state with output, initial above, accepting] (idle)
+    { \texttt{IDLE}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{busy\_r}{=}0 \\
+        \mathit{rvalid}{=}0
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (busy) [right=of idle]
+    { \texttt{BUSY}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{busy\_r}{=}1 \\
+        \mathit{rvalid}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  % ── Transitions ───────────────────────────────────────────────────────────
+
+  \path[->]
+    (idle)
+      edge [loop left]
+        node [left] {\scriptsize $\neg\mathit{req}$ or $(\mathit{req}{\wedge}\mathit{wr})$}
+        (idle)
+      edge [bend left=20]
+        node [above] {\scriptsize $\mathit{req}{\wedge}\neg\mathit{wr}$}
+        (busy)
+    (busy)
+      edge [bend left=20]
+        node [below] {\scriptsize $\mathbf{1}$}
+        (idle);
+
+\end{tikzpicture}
+\caption{Moore-FSM: \texttt{asScratch} Scratchpad Controller
+  (\texttt{ip\_scratch/src/asScratch.sv}).
+  \textbf{Note:} The \texttt{dc\_stall\_o} output is a Mealy signal
+  (\textit{stall} $= \mathit{req} \wedge \neg\mathit{wr} \wedge
+  \neg\mathit{busy\_r}$) and therefore depends on both state and
+  inputs; it is not shown in the state node.
+  Stores (\textit{req}~$\wedge$~\textit{wr}) are single-cycle and
+  never cause a stall; the SRAM write completes in the same cycle.
+  Only loads (\textit{req}~$\wedge$~$\neg$\textit{wr}) require one
+  extra cycle for the registered SRAM read output.}
+\label{fig:asScratchFsm01}
+\end{figure}
+
+\begin{description}
+
+  \item[\texttt{IDLE} ($\mathit{busy\_r}{=}0$)]
+    The scratchpad is ready.
+    \begin{itemize}
+      \item \textbf{No request} ($\neg\mathit{req}$): remain idle; SRAM
+        chip-enable (\texttt{cen\_i}) is de-asserted.
+      \item \textbf{Store} ($\mathit{req}{\wedge}\mathit{wr}$):
+        assert \texttt{cen\_i}, \texttt{we\_i}, and the byte-write
+        enables \texttt{wbe\_i} from \texttt{dc\_wstrb\_i}; the
+        SRAM completes the write in the current cycle; remain in
+        \textsc{Idle} with no stall.
+        The \texttt{dc\_stall\_o} output is low for stores.
+      \item \textbf{Load} ($\mathit{req}{\wedge}\neg\mathit{wr}$):
+        latch \texttt{dc\_size\_i} and \texttt{dc\_addr[2:0]} into
+        \texttt{size\_r} and \texttt{boff\_r}; assert \texttt{cen\_i}
+        with \texttt{we\_i\,=\,0}; assert \texttt{dc\_stall\_o}
+        (Mealy output); set \texttt{busy\_r\,=\,1}; go to \textsc{Busy}.
+    \end{itemize}
+
+  \item[\texttt{BUSY} ($\mathit{busy\_r}{=}1$)]
+    The SRAM registered read output \texttt{sram\_rdata\_s} is now
+    valid.
+    The combinatorial output logic sign/zero-extends the 64-bit SRAM
+    word according to \texttt{size\_r} (byte, halfword, word, double)
+    and byte offset \texttt{boff\_r}, following the RISC-V load
+    semantics (\texttt{LB}/\texttt{LH}/\texttt{LW}/\texttt{LD}/
+    \texttt{LBU}/\texttt{LHU}/\texttt{LWU}).
+    \texttt{dc\_rvalid\_o} is asserted; \texttt{dc\_stall\_o} is
+    de-asserted (Mealy: \textit{req} would be 0 because the CPU sees
+    stall and has not issued a new request).
+    Unconditional transition back to \textsc{Idle}.
+
+\end{description}

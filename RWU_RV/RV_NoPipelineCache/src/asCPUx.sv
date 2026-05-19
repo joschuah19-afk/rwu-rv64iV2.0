@@ -63,7 +63,7 @@ module as_cpux (input  logic                         clk_i,
   logic and_in02_s, and_out_s;
 
   // IRQ / CSR
-  logic [63:0] csr_mepc_s, csr_mcause_s, csr_mtvec_s, csr_mstatus_s, csr_mie_s, csr_mip_s;
+  logic [63:0] csr_mepc_r, csr_mcause_r, csr_mtvec_r, csr_mstatus_r, csr_mie_r, csr_mip_r;
   logic [reg_width-1:0] csr_data_s;
   logic [reg_width-1:0] regfile_data_w_s;
   logic csr_mstatus_mpie, csr_mstatus_mie;
@@ -157,8 +157,8 @@ module as_cpux (input  logic                         clk_i,
       PC_s <= 64'h0000000000000000;
     else begin
       if(fetch0_phase_s) begin
-        if(trap_taken_s)      PC_s <= {csr_mtvec_s[63:2], 2'b00};
-        else if(mret_pending_s) PC_s <= csr_mepc_s;
+        if(trap_taken_s)      PC_s <= {csr_mtvec_r[63:2], 2'b00};
+        else if(mret_pending_s) PC_s <= csr_mepc_r;
         else if(take_s)        PC_s <= PCbr_s;
         else                   PC_s <= PCp4_s;
       end
@@ -333,7 +333,7 @@ module as_cpux (input  logic                         clk_i,
     end
   end
 
-  assign irq_pending_s = csr_mip_s[11] && csr_mie_s[11] && csr_mstatus_mie;
+  assign irq_pending_s = csr_mip_r[11] && csr_mie_r[11] && csr_mstatus_mie;
   assign opcode_s      = ir_s[6:0];
   assign trap_illegal_s = trap_illegal_instrx_s;
 
@@ -379,53 +379,53 @@ module as_cpux (input  logic                         clk_i,
 
   // MIP
   always_ff @(posedge clk_i, posedge rst_i) begin
-    if(rst_i) csr_mip_s <= 64'h0;
-    else      csr_mip_s[11] <= irq_ext_sync2_s;
+    if(rst_i) csr_mip_r <= 64'h0;
+    else      csr_mip_r[11] <= irq_ext_sync2_s;
   end
 
   // MIE
   always_ff @(posedge clk_i, posedge rst_i) begin
     if(rst_i == 1)
-      csr_mie_s <= 64'h0000000000000800;
+      csr_mie_r <= 64'h0000000000000800;
     else begin
       if(exec_phase_s && ir_valid_s)
         if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h304))
           case(ir_s[14:12])
-            3'b001: csr_mie_s <= regA_s;
-            3'b010: csr_mie_s <= csr_mie_s | regA_s;
-            3'b011: csr_mie_s <= csr_mie_s & ~regA_s;
-            3'b101: csr_mie_s <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mie_s <= csr_mie_s | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mie_s <= csr_mie_s & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-            default: csr_mie_s <= regA_s;
+            3'b001: csr_mie_r <= regA_s;
+            3'b010: csr_mie_r <= csr_mie_r | regA_s;
+            3'b011: csr_mie_r <= csr_mie_r & ~regA_s;
+            3'b101: csr_mie_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b110: csr_mie_r <= csr_mie_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b111: csr_mie_r <= csr_mie_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+            default: csr_mie_r <= regA_s;
           endcase
     end
   end
 
   // MSTATUS
-  assign csr_mstatus_mpie = csr_mstatus_s[7];
-  assign csr_mstatus_mie  = csr_mstatus_s[3];
+  assign csr_mstatus_mpie = csr_mstatus_r[7];
+  assign csr_mstatus_mie  = csr_mstatus_r[3];
 
   always_ff @(posedge clk_i, posedge rst_i) begin
     if(rst_i == 1)
-      csr_mstatus_s <= 64'h0000000000001808;
+      csr_mstatus_r <= 64'h0000000000001808;
     else begin
       if(trap_taken_s) begin
-        csr_mstatus_s[7] <= csr_mstatus_mie;
-        csr_mstatus_s[3] <= 0;
+        csr_mstatus_r[7] <= csr_mstatus_mie;
+        csr_mstatus_r[3] <= 0;
       end else if(is_mret_s && exec_phase_s) begin
-        csr_mstatus_s[3] <= csr_mstatus_mpie;
-        csr_mstatus_s[7] <= 1'b1;
+        csr_mstatus_r[3] <= csr_mstatus_mpie;
+        csr_mstatus_r[7] <= 1'b1;
       end else if(exec_phase_s && ir_valid_s)
         if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h300))
           case(ir_s[14:12])
-            3'b001: csr_mstatus_s <= regA_s;
-            3'b010: csr_mstatus_s <= csr_mstatus_s | regA_s;
-            3'b011: csr_mstatus_s <= csr_mstatus_s & ~regA_s;
-            3'b101: csr_mstatus_s <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mstatus_s <= csr_mstatus_s | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mstatus_s <= csr_mstatus_s & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-            default: csr_mie_s <= regA_s;
+            3'b001: csr_mstatus_r <= regA_s;
+            3'b010: csr_mstatus_r <= csr_mstatus_r | regA_s;
+            3'b011: csr_mstatus_r <= csr_mstatus_r & ~regA_s;
+            3'b101: csr_mstatus_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b110: csr_mstatus_r <= csr_mstatus_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+            default: csr_mie_r <= regA_s;
           endcase
     end
   end
@@ -433,23 +433,23 @@ module as_cpux (input  logic                         clk_i,
   // MEPC
   always_ff @(posedge clk_i, posedge rst_i) begin
     if(rst_i)
-      csr_mepc_s <= 0;
+      csr_mepc_r <= 0;
     else begin
       if(trap_taken_s) begin
         if(trap_illegal_s || trap_misaligned_s)
-          csr_mepc_s <= PC_s;
+          csr_mepc_r <= PC_s;
         else
-          csr_mepc_s <= PCp4_s;
+          csr_mepc_r <= PCp4_s;
       end else if(exec_phase_s && ir_valid_s)
         if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h341))
           case(ir_s[14:12])
-            3'b001: csr_mepc_s <= regA_s;
-            3'b010: csr_mepc_s <= csr_mepc_s | regA_s;
-            3'b011: csr_mepc_s <= csr_mepc_s & ~regA_s;
-            3'b101: csr_mepc_s <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mepc_s <= csr_mepc_s | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mepc_s <= csr_mepc_s & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-            default: csr_mie_s <= regA_s;
+            3'b001: csr_mepc_r <= regA_s;
+            3'b010: csr_mepc_r <= csr_mepc_r | regA_s;
+            3'b011: csr_mepc_r <= csr_mepc_r & ~regA_s;
+            3'b101: csr_mepc_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b110: csr_mepc_r <= csr_mepc_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b111: csr_mepc_r <= csr_mepc_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+            default: csr_mie_r <= regA_s;
           endcase
     end
   end
@@ -457,31 +457,31 @@ module as_cpux (input  logic                         clk_i,
   // MTVEC
   always_ff @(posedge clk_i, posedge rst_i) begin
     if(rst_i == 1)
-      csr_mtvec_s <= 64'h0000000000007F00;
+      csr_mtvec_r <= 64'h0000000000007F00;
     else if(exec_phase_s && ir_valid_s)
       if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h305))
         case(ir_s[14:12])
-          3'b001: csr_mtvec_s <= regA_s;
-          3'b010: csr_mtvec_s <= csr_mtvec_s | regA_s;
-          3'b011: csr_mtvec_s <= csr_mtvec_s & ~regA_s;
-          3'b101: csr_mtvec_s <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-          3'b110: csr_mtvec_s <= csr_mtvec_s | {{52{1'b0}}, ir_s[19:15], 7'b0};
-          3'b111: csr_mtvec_s <= csr_mtvec_s & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-          default: csr_mie_s <= regA_s;
+          3'b001: csr_mtvec_r <= regA_s;
+          3'b010: csr_mtvec_r <= csr_mtvec_r | regA_s;
+          3'b011: csr_mtvec_r <= csr_mtvec_r & ~regA_s;
+          3'b101: csr_mtvec_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
+          3'b110: csr_mtvec_r <= csr_mtvec_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
+          3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+          default: csr_mie_r <= regA_s;
         endcase
   end
 
   // MCAUSE
   always_ff @(posedge clk_i, posedge rst_i) begin
     if(rst_i)
-      csr_mcause_s <= 64'h0;
+      csr_mcause_r <= 64'h0;
     else if(trap_taken_s) begin
-      if(trap_illegal_s)         csr_mcause_s <= 64'd2;
+      if(trap_illegal_s)         csr_mcause_r <= 64'd2;
       else if(trap_misaligned_s) begin
-        if(dMemRd_s)       csr_mcause_s <= 64'd4;
-        else if(dMemWr_s)  csr_mcause_s <= 64'd6;
-        else               csr_mcause_s <= 64'd0;
-      end else if(irq_pending_s) csr_mcause_s <= {1'b1, 63'd11};
+        if(dMemRd_s)       csr_mcause_r <= 64'd4;
+        else if(dMemWr_s)  csr_mcause_r <= 64'd6;
+        else               csr_mcause_r <= 64'd0;
+      end else if(irq_pending_s) csr_mcause_r <= {1'b1, 63'd11};
     end
   end
 
@@ -490,12 +490,12 @@ module as_cpux (input  logic                         clk_i,
     csr_data_s = 64'h0;
     if((ir_s[6:0] == 7'b1110011) && (ir_s[14:12] != 3'b000))
       case(ir_s[31:20])
-        12'h300: csr_data_s = csr_mstatus_s;
-        12'h304: csr_data_s = csr_mie_s;
-        12'h305: csr_data_s = csr_mtvec_s;
-        12'h341: csr_data_s = csr_mepc_s;
-        12'h342: csr_data_s = csr_mcause_s;
-        12'h344: csr_data_s = csr_mip_s;
+        12'h300: csr_data_s = csr_mstatus_r;
+        12'h304: csr_data_s = csr_mie_r;
+        12'h305: csr_data_s = csr_mtvec_r;
+        12'h341: csr_data_s = csr_mepc_r;
+        12'h342: csr_data_s = csr_mcause_r;
+        12'h344: csr_data_s = csr_mip_r;
         default: csr_data_s = 64'h0;
       endcase
   end

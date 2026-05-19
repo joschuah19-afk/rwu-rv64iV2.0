@@ -98,8 +98,9 @@ module as_fifo #(
 );
 
   // ---------------------------------------------------------------------------
-  // Parameter checks (evaluated at elaboration time)
+  // Parameter checks (simulation / elaboration only — not synthesised)
   // ---------------------------------------------------------------------------
+  // synthesis translate_off
   initial begin
     if (FIFO_DEPTH < 2 || (FIFO_DEPTH & (FIFO_DEPTH-1)) != 0)
       $fatal(1, "as_fifo: FIFO_DEPTH must be a power of 2 and >= 2");
@@ -108,6 +109,7 @@ module as_fifo #(
     if (AE_LEVEL <= 0)
       $fatal(1, "as_fifo: AE_LEVEL must be > 0");
   end
+  // synthesis translate_on
 
   // ---------------------------------------------------------------------------
   // Local types and storage

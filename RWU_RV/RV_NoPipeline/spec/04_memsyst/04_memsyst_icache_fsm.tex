@@ -1,0 +1,218 @@
+% ─────────────────────────────────────────────────────────────────────────────
+% I-Cache Controller FSM — tikz state diagram and state descriptions
+% Source: ip_icache/src/asICache.sv
+% ─────────────────────────────────────────────────────────────────────────────
+
+The complete Moore-FSM of \texttt{asICache} is shown in
+Fig.~\ref{fig:asICacheFsm01}.
+Outputs depend only on the current state (state nodes contain key active
+signals); input conditions label the transitions.
+All signal names correspond directly to the \texttt{asICache} port list
+(Tables~\ref{tab:asICacheCtrlPorts}~and~\ref{tab:asICacheCtrlPorts2}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[shorten >=1pt, node distance=3.2cm, on grid, auto,
+  every state/.style={fill=blue!10}, initial text=]
+
+  % ── State nodes ──────────────────────────────────────────────────────────
+
+  \node[state with output, initial above, accepting] (idle)
+    { \texttt{IDLE}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}0 \\
+        \mathit{rvalid}{=}0
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (flush) [right=of idle]
+    { \texttt{FLUSH}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (lookup) [below=of idle]
+    { \texttt{LOOKUP}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (miss) [below=of lookup]
+    { \texttt{MISS}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1 \\
+        \mathit{arvalid}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (fill) [below=of miss]
+    { \texttt{FILL}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{stall}{=}1 \\
+        \mathit{rready}{=}1
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (respond) [below=of fill]
+    { \texttt{RESPOND}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{rvalid}{=}1 \\
+        \mathit{stall}{=}0
+      \end{array}$\end{tiny}
+    };
+
+  \node[state with output] (err) [right=of fill]
+    { \texttt{ERR}
+      \nodepart{lower}
+      \begin{tiny}$\begin{array}{l}
+        \mathit{err}{=}1 \\
+        \mathit{stall}{=}0
+      \end{array}$\end{tiny}
+    };
+
+  % ── Transitions ───────────────────────────────────────────────────────────
+
+  \path[->]
+    % IDLE arcs
+    (idle)
+      edge [in=100,out=130,loop]     node [left] {\scriptsize $\neg\mathit{req}{\wedge}\neg\mathit{flush}$} (idle)
+      edge [bend right] node [left] {\scriptsize $\mathit{ic\_req}$}                                                         (lookup)
+      edge [bend right] node [above] {\scriptsize $\mathit{ic\_flush}$}                                                 (flush)
+
+    % LOOKUP arcs
+    (lookup)
+      edge [bend right=35] node [right] {\scriptsize $\mathit{hit}$}        (idle)
+      edge                                 node [left] {\scriptsize $\neg\mathit{hit}$} (miss)
+
+    % MISS arcs
+    (miss)
+      edge [loop left] node [left] {\scriptsize $\neg\mathit{arready}$} (miss)
+      edge                     node [left] {\scriptsize $\mathit{arready}$}           (fill)
+
+    % FILL arcs
+    (fill)
+      edge [loop left]     node [left] {\scriptsize $\mathit{rvalid}{\wedge}\neg\mathit{rlast}$}                                              (fill)
+      edge                          node [left] {\scriptsize $\mathit{rvalid}{\wedge}\mathit{rlast}{\wedge}\mathit{rresp}{=}0$} (respond)
+      edge [bend right] node [above] {\scriptsize $\mathit{rvalid}{\wedge}\mathit{rresp}{\neq}0$}                                  (err)
+
+    % RESPOND arc back to IDLE (long, bend right to avoid crossing nodes)
+    (respond)
+      edge [bend left=90] node [right] {\scriptsize $\mathbf{1}$} (idle)
+
+    % ERR arc back to IDLE
+    (err)
+      edge [bend right=30] node [above right] {\scriptsize $\mathbf{1}$} (idle)
+
+    % FLUSH arcs
+    (flush)
+      edge [loop right]          node [right] {\scriptsize $\mathit{cnt}{<}31$}   (flush)
+      edge [bend right=25] node [below] {\scriptsize $\mathit{cnt}{=}31$} (idle);
+
+\end{tikzpicture}
+\caption{Moore-FSM: \texttt{asICache} Instruction Cache Controller
+  (\texttt{ip\_icache/src/asICache.sv}).
+  \textbf{State nodes} show active outputs only; inactive signals are
+  zero.
+  $\mathit{cnt}$ is the 5-bit set counter \texttt{flush\_cnt\_r}
+  (counts 0\ldots{}31 during cache-line invalidation).
+  The self-loop label \textbf{1} on \textsc{Respond} and \textsc{Err}
+  denotes an unconditional one-cycle transition.}
+\label{fig:asICacheFsm01}
+\end{figure}
+
+\paragraph{State-by-state description of \texttt{asICache}:}
+
+\begin{description}
+
+  \item[\texttt{IDLE}]
+    The cache is quiescent.
+    \texttt{ic\_stall\_o} is de-asserted; the CPU may issue a new request.
+    On each clock cycle one of three branches is taken:
+    \begin{itemize}
+      \item $\mathit{ic\_flush\_i}{=}1$: assert \texttt{ic\_stall\_o},
+        initialise \texttt{flush\_cnt\_r} to zero, transition to
+        \textsc{Flush}.
+      \item $\mathit{ic\_req\_i}{=}1$: latch \texttt{ic\_addr\_i} into
+        \texttt{lk\_tag\_r}, \texttt{lk\_idx\_r}, \texttt{lk\_instr\_r};
+        present \texttt{req\_idx\_s} to the data and tag SRAM read ports
+        (registered output will be valid in \textsc{Lookup});
+        assert \texttt{ic\_stall\_o}; transition to \textsc{Lookup}.
+      \item Otherwise: remain in \textsc{Idle}.
+    \end{itemize}
+
+  \item[\texttt{LOOKUP}]
+    The SRAM registered output (\texttt{data\_rdata\_s},
+    \texttt{tag\_rdata\_s}) is now valid.
+    The combinatorial valid array \texttt{valid\_rdata\_s} is read via
+    \texttt{lk\_idx\_r}.
+    Hit detection computes \texttt{hit\_vec\_s[w] = valid[w] \& (tag[w]
+    == lk\_tag\_r)} for all ways $w \in \{0,1,2,3\}$:
+    \begin{itemize}
+      \item \textbf{Hit} ($\mathit{hit\_s}{=}1$): extract the 32-bit
+        instruction word from the hit way using
+        \texttt{lk\_instr\_r[4:2]} as the selector; assert
+        \texttt{ic\_rdata\_o} and \texttt{ic\_rvalid\_o}; update PLRU;
+        de-assert \texttt{ic\_stall\_o}; transition to \textsc{Idle}.
+        Total latency: \textbf{2 cycles} (IDLE + LOOKUP).
+      \item \textbf{Miss} ($\mathit{hit\_s}{=}0$): select victim way via
+        PLRU (prefer invalid way); latch \texttt{fill\_way\_r};
+        drive the AXI4 AR channel with the cache-line-aligned miss
+        address (\texttt{lk\_line\_addr\_r}); assert
+        \texttt{ar\_valid\_r}; transition to \textsc{Miss}.
+    \end{itemize}
+
+  \item[\texttt{MISS}]
+    The AXI4 AR channel handshake is in progress.
+    \texttt{arvalid} is held high; the FSM waits until the memory
+    arbiter (\texttt{asMemArb}) asserts \texttt{arready}.
+    On acknowledgement: clear \texttt{ar\_valid\_r}; transition to
+    \textsc{Fill}.
+    Stall remains asserted throughout.
+
+  \item[\texttt{FILL}]
+    AXI4 R-channel beats are received.
+    \texttt{rready} is held high (combinatorial from state).
+    For each beat with $\mathit{rvalid}{=}1$:
+    \begin{itemize}
+      \item If $\mathit{rresp}{\neq}0$: assert \texttt{ic\_err\_o};
+        de-assert stall; transition to \textsc{Err}.
+      \item If $\mathit{rlast}{=}0$: write the beat into
+        \texttt{fill\_buf\_r} at position \texttt{beat\_r}; increment
+        \texttt{beat\_r}; remain in \textsc{Fill}.
+      \item If $\mathit{rlast}{=}1$ and $\mathit{rresp}{=}0$:
+        write the full line (data + tag + valid) to the SRAM;
+        update PLRU; latch the requested instruction word into
+        \texttt{rdata\_r}; transition to \textsc{Respond}.
+    \end{itemize}
+
+  \item[\texttt{RESPOND}]
+    One-cycle response state.
+    \texttt{ic\_rvalid\_o} is pulsed high; \texttt{ic\_stall\_o} is
+    de-asserted; the FSM returns to \textsc{Idle}.
+    This extra cycle exists because the SRAM write (in \textsc{Fill})
+    and the read-data extraction occur in the same cycle, and the
+    CPU must sample valid data on the following edge.
+
+  \item[\texttt{ERR}]
+    One-cycle error state.
+    \texttt{ic\_err\_o} is pulsed high; \texttt{ic\_stall\_o} is
+    de-asserted; the FSM returns to \textsc{Idle}.
+    The filled cache line is \emph{not} written (valid bit stays clear).
+
+  \item[\texttt{FLUSH}]
+    Cache invalidation loop.
+    In each cycle the combinatorial write-port decode
+    (\texttt{valid\_flush\_en\_s}) clears all four valid bits for set
+    index \texttt{flush\_cnt\_r}, and PLRU bits for that set are zeroed.
+    After 32 cycles (all 32 sets), \texttt{ic\_flush\_done\_o} is
+    pulsed and the FSM returns to \textsc{Idle} with stall de-asserted.
+
+\end{description}

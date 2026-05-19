@@ -29,11 +29,12 @@ module as_top_mem (
     output logic                    sck_o,
     output logic                    flash_cs_o,
     inout  tri   [3:0]              flash_data_io,
-    // Clock for testbench (= clk_core_s, same domain as QSPI master)
+    // Clock for testbench (= clk_div_s = clk_core_s)
     output logic                    clk_div_o
 );
 
   // ── Signal declarations ─────────────────────────────────────────
+  localparam int QSPI_AW = 8;
   logic clk_core_s, clk_qspi_s, clk_bus1_s, clk_bus2_s;
   logic dr_cap_s;
   logic clk_div_s;
@@ -43,9 +44,6 @@ module as_top_mem (
   logic sc01_tdo_s, sc01_tdi_s, sc01_shift_s, sc01_clock_s;
   logic im_tdo_s, im_tdi_s, im_shift_s, im_clock_s, im_upd_s, im_mode_s;
   logic bs_tdo_s, bs_tdi_s, bs_shift_s, bs_clock_s, bs_upd_s, bs_mode_s;
-
-  // CPU
-  logic [instr_width-1:0] ir_s;
 
   // Peripheral bridge
   logic [chipsel-1:0]     csx_s;
@@ -58,7 +56,7 @@ module as_top_mem (
   logic [reg_width-1:0]   dBusDataRdCgu_s;
   logic [reg_width-1:0]   periph_rdata_s;
   logic                   wbdstbGpio_s, wbdstbQspi_s, wbdstbCgu_s;
-  logic                   wdbAckGpio_s, wdbAckQspi_s, wdbAckCgu_s;
+  // WB ACK signals intentionally unconnected: bridge uses fixed 1-cycle dc_rvalid
   logic                   is_periph_req_s;
   logic                   is_periph_r;
   logic                   is_periph_s;
@@ -78,11 +76,16 @@ module as_top_mem (
   as_icache_if icpu_if_s   (.clk_i(clk_div_s), .rst_i(rst_i));
   as_dcache_if dcpu_if_s   (.clk_i(clk_div_s), .rst_i(rst_i));
   as_dcache_if dcpu_mem_if_s(.clk_i(clk_div_s), .rst_i(rst_i));
-  as_axi4_if #(.ADDR_W(32)) qspi_if_s (.clk_i(clk_div_s), .rst_i(rst_i));
+  as_axi4_if #(.ADDR_W(32)) qspi_if_s (.clk_i(clk_qspi_s), .rst_i(rst_i));
 
   // ── Clock mux (scan test) ───────────────────────────────────────
-  assign clk_div_s = dr_cap_s ? clk_i : clk_core_s;
-  assign clk_div_o = clk_div_s;
+  assign clk_div_s  = dr_cap_s ? clk_i : clk_core_s;
+  assign clk_div_o  = clk_div_s;
+  // All CGU domain clocks tied to core clock — no CDC needed until fast/slow
+  // peripherals are added to the SoC and the CGU outputs are re-enabled.
+  assign clk_qspi_s = clk_div_s;
+  assign clk_bus1_s = clk_div_s;
+  assign clk_bus2_s = clk_div_s;
 
   assign cs_o = asGpioCs_s;
 
@@ -148,11 +151,11 @@ module as_top_mem (
     .wbdWe_i(wbdwe_s),
     .wbdSel_i(sel_s),
     .wbdStb_i(wbdstbCgu_s),
-    .wbdAck_o(wdbAckCgu_s),
+    .wbdAck_o(),
     .wbdCyc_i(is_periph_req_s),
-    .clk_bus1_o(clk_bus1_s),
-    .clk_bus2_o(clk_bus2_s),
-    .clk_qspi_o(clk_qspi_s),
+    .clk_bus1_o( /* unused: clk_bus1_s tied to clk_div_s below */ ),
+    .clk_bus2_o( /* unused: clk_bus2_s tied to clk_div_s below */ ),
+    .clk_qspi_o( /* unused: clk_qspi_s tied to clk_div_s below */ ),
     .clk_core_o(clk_core_s)
   );
 
@@ -165,7 +168,7 @@ module as_top_mem (
     .wbdWe_i(wbdwe_s),
     .wbdSel_i(sel_s),
     .wbdStb_i(wbdstbGpio_s),
-    .wbdAck_o(wdbAckGpio_s),
+    .wbdAck_o(),
     .wbdCyc_i(is_periph_req_s),
     .gpio_irq_o(irq_gpiox_s),
     .gpio_io(gpio_io),
@@ -175,13 +178,12 @@ module as_top_mem (
   // ── QSPI controller ──────────────────────────────────────────────
   // QSPI peripheral WB address base: 0x1_0000_0200 (csx[2])
   // Register offsets 0x00–0x88 fit in 8-bit address (256 > 136 = OFF_STATUS).
-  localparam int QSPI_AW = 8;
   as_qspi_top #(
     .QSPI_ADDR_WIDTH(QSPI_AW),
     .QSPI_DATA_WIDTH(reg_width),
     .FIFO_DEPTH(16)
   ) qspi_ctrl (
-    .clk_i      (clk_div_s),
+    .clk_i      (clk_qspi_s),
     .rst_i      (rst_i),
     .wbdAddr_i  (dBusAddr_periph_s[QSPI_AW-1:0]),
     .wbdDat_i   (dBusDataWr_periph_s),
@@ -189,7 +191,7 @@ module as_top_mem (
     .wbdWe_i    (wbdwe_s),
     .wbdSel_i   (sel_s),
     .wbdStb_i   (wbdstbQspi_s),
-    .wbdAck_o   (wdbAckQspi_s),
+    .wbdAck_o   (),
     .wbdCyc_i   (is_periph_req_s),
     .axi4_if    (qspi_if_s),
     .sck_o      (sck_o),
@@ -224,7 +226,7 @@ module as_top_mem (
   // ── CPU ──────────────────────────────────────────────────────────
   as_cpux cpu (
     .clk_i(clk_div_s), .rst_i(rst_i), .tck_i(tck_i),
-    .ir_o(ir_s),
+    .ir_o(),
     .dr_cap_i(dr_cap_s),
     .sc01_tdo_o(sc01_tdo_s), .sc01_tdi_i(sc01_tdi_s),
     .sc01_shift_i(sc01_shift_s), .sc01_clock_i(sc01_clock_s),

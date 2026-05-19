@@ -74,12 +74,12 @@ module as_cpux (input  logic                         clk_i,
   logic	and_out_s;
 
   //IRQ
-  logic [63:0] csr_mepc_s;
-  logic [63:0] csr_mcause_s;
-  logic [63:0] csr_mtvec_s;
-  logic [63:0] csr_mstatus_s;
-  logic [63:0] csr_mie_s;
-  logic [63:0] csr_mip_s;
+  logic [63:0] csr_mepc_r;
+  logic [63:0] csr_mcause_r;
+  logic [63:0] csr_mtvec_r;
+  logic [63:0] csr_mstatus_r;
+  logic [63:0] csr_mie_r;
+  logic [63:0] csr_mip_r;
 
   logic [reg_width-1:0] csr_data_s;
   logic [reg_width-1:0] regfile_data_w_s;
@@ -163,10 +163,10 @@ module as_cpux (input  logic                         clk_i,
       if(fetch0_phase_s)
       begin
         if(trap_taken_s)
-          PC_s <= {csr_mtvec_s[63:2], 2'b00};  // Jump to trap vector
+          PC_s <= {csr_mtvec_r[63:2], 2'b00};  // Jump to trap vector
         else
           if(mret_pending_s)
-            PC_s <= csr_mepc_s;                // Return from trap
+            PC_s <= csr_mepc_r;                // Return from trap
           else 
             if(take_s)
               PC_s <= PCbr_s;  // Branch/Jump
@@ -408,7 +408,7 @@ module as_cpux (input  logic                         clk_i,
   // Interrupt & Trap Detection
   //===========================================
   // IRQ pending when: MIP.MEIP & MIE.MEIE & MSTATUS.MIE
-  assign irq_pending_s = csr_mip_s[11] && csr_mie_s[11] && csr_mstatus_mie;
+  assign irq_pending_s = csr_mip_r[11] && csr_mie_r[11] && csr_mstatus_mie;
   
   // Illegal instruction detection
   assign opcode_s = ir_s[6:0];
@@ -496,9 +496,9 @@ module as_cpux (input  logic                         clk_i,
   // This is directly driven by synchronized external IRQ
   always_ff @(posedge clk_i, posedge rst_i) begin
     if(rst_i)
-      csr_mip_s <= 64'h0;
+      csr_mip_r <= 64'h0;
     else
-      csr_mip_s[11] <= irq_ext_sync2_s;  // Direct wire-through
+      csr_mip_r[11] <= irq_ext_sync2_s;  // Direct wire-through
   end
   
   // MIE: 64 bit, rw, h304); OK
@@ -508,19 +508,19 @@ module as_cpux (input  logic                         clk_i,
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i == 1)
-      csr_mie_s <= 64'h0000000000000800;  // MEIE enabled by default
+      csr_mie_r <= 64'h0000000000000800;  // MEIE enabled by default
     else
     begin
       if(exec_phase_s && ir_valid_s)
         if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h304))               // csr..
           case(ir_s[14:12])
-            3'b001: csr_mie_s <= regA_s;                                        // csrrw
-            3'b010: csr_mie_s <= csr_mie_s | regA_s;                            // csrrs
-            3'b011: csr_mie_s <= csr_mie_s & ~regA_s;                           // csrrc
-            3'b101: csr_mie_s <= {{52{1'b0}}, ir_s[19:15], 7'b0};               // csrrwi
-            3'b110: csr_mie_s <= csr_mie_s | {{52{1'b0}}, ir_s[19:15], 7'b0};   // csrrsi
-            3'b111: csr_mie_s <= csr_mie_s & ~{{52{1'b0}}, ir_s[19:15], 7'b0};  // csrrci
-	    default: csr_mie_s <= regA_s;
+            3'b001: csr_mie_r <= regA_s;                                        // csrrw
+            3'b010: csr_mie_r <= csr_mie_r | regA_s;                            // csrrs
+            3'b011: csr_mie_r <= csr_mie_r & ~regA_s;                           // csrrc
+            3'b101: csr_mie_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};               // csrrwi
+            3'b110: csr_mie_r <= csr_mie_r | {{52{1'b0}}, ir_s[19:15], 7'b0};   // csrrsi
+            3'b111: csr_mie_r <= csr_mie_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};  // csrrci
+	    default: csr_mie_r <= regA_s;
           endcase
     end
   end
@@ -534,37 +534,37 @@ module as_cpux (input  logic                         clk_i,
   //===========================================
   // CSR: MSTATUS
   //===========================================
-  assign csr_mstatus_mpie = csr_mstatus_s[7];
-  assign csr_mstatus_mie  = csr_mstatus_s[3];
+  assign csr_mstatus_mpie = csr_mstatus_r[7];
+  assign csr_mstatus_mie  = csr_mstatus_r[3];
   
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i == 1)
-      csr_mstatus_s <= 64'h0000000000001808;  // MIE=1, MPIE=1
+      csr_mstatus_r <= 64'h0000000000001808;  // MIE=1, MPIE=1
     else
     begin
       if( trap_taken_s )  // Trap entry: MPIE <= MIE, MIE <= 0
       begin
-        csr_mstatus_s[7] <= csr_mstatus_mie;  // MPIE
-        csr_mstatus_s[3] <= 0;                // MIE
+        csr_mstatus_r[7] <= csr_mstatus_mie;  // MPIE
+        csr_mstatus_r[3] <= 0;                // MIE
       end
       else
         if(is_mret_s && exec_phase_s)            // MRET: MIE <= MPIE, MPIE <= 1
         begin
-          csr_mstatus_s[3] <= csr_mstatus_mpie;  // MIE
-          csr_mstatus_s[7] <= 1'b1;              // MPIE
+          csr_mstatus_r[3] <= csr_mstatus_mpie;  // MIE
+          csr_mstatus_r[7] <= 1'b1;              // MPIE
         end
         else
           if(exec_phase_s && ir_valid_s) // CSR write
             if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h300)) 
               case(ir_s[14:12])
-                3'b001: csr_mstatus_s <= regA_s;
-                3'b010: csr_mstatus_s <= csr_mstatus_s | regA_s;
-                3'b011: csr_mstatus_s <= csr_mstatus_s & ~regA_s;
-                3'b101: csr_mstatus_s <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-                3'b110: csr_mstatus_s <= csr_mstatus_s | {{52{1'b0}}, ir_s[19:15], 7'b0};
-                3'b111: csr_mstatus_s <= csr_mstatus_s & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-		default: csr_mie_s <= regA_s;
+                3'b001: csr_mstatus_r <= regA_s;
+                3'b010: csr_mstatus_r <= csr_mstatus_r | regA_s;
+                3'b011: csr_mstatus_r <= csr_mstatus_r & ~regA_s;
+                3'b101: csr_mstatus_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
+                3'b110: csr_mstatus_r <= csr_mstatus_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
+                3'b111: csr_mstatus_r <= csr_mstatus_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+		default: csr_mie_r <= regA_s;
               endcase
     end
   end
@@ -576,25 +576,25 @@ module as_cpux (input  logic                         clk_i,
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i)
-      csr_mepc_s <= 0;
+      csr_mepc_r <= 0;
     else
     begin
       if( trap_taken_s )
         if(trap_illegal_s || trap_misaligned_s)
-          csr_mepc_s <= PC_s; // PC_s, iBusAddr_s
+          csr_mepc_r <= PC_s; // PC_s, iBusAddr_s
         else
-          csr_mepc_s <= PCp4_s; // csr_mepc_s <= PCp4_s; iBusAddr_s + 64'd4; iBusAddr_s
+          csr_mepc_r <= PCp4_s; // csr_mepc_r <= PCp4_s; iBusAddr_s + 64'd4; iBusAddr_s
       else
         if(exec_phase_s && ir_valid_s)
           if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h341))
             case(ir_s[14:12])
-              3'b001: csr_mepc_s <= regA_s;
-              3'b010: csr_mepc_s <= csr_mepc_s | regA_s;
-              3'b011: csr_mepc_s <= csr_mepc_s & ~regA_s;
-              3'b101: csr_mepc_s <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-              3'b110: csr_mepc_s <= csr_mepc_s | {{52{1'b0}}, ir_s[19:15], 7'b0};
-              3'b111: csr_mepc_s <= csr_mepc_s & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-	      default: csr_mie_s <= regA_s;
+              3'b001: csr_mepc_r <= regA_s;
+              3'b010: csr_mepc_r <= csr_mepc_r | regA_s;
+              3'b011: csr_mepc_r <= csr_mepc_r & ~regA_s;
+              3'b101: csr_mepc_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
+              3'b110: csr_mepc_r <= csr_mepc_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
+              3'b111: csr_mepc_r <= csr_mepc_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+	      default: csr_mie_r <= regA_s;
             endcase
     end
   end
@@ -607,18 +607,18 @@ module as_cpux (input  logic                         clk_i,
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i == 1)
-      csr_mtvec_s <= 64'h0000000000007F00; // set the ISR address by reset!!!!!
+      csr_mtvec_r <= 64'h0000000000007F00; // set the ISR address by reset!!!!!
     else
       if(exec_phase_s && ir_valid_s)
         if((ir_s[6:0] == 7'b1110011) && (ir_s[31:20] == 12'h305))
           case(ir_s[14:12])
-            3'b001: csr_mtvec_s <= regA_s;
-            3'b010: csr_mtvec_s <= csr_mtvec_s | regA_s;
-            3'b011: csr_mtvec_s <= csr_mtvec_s & ~regA_s;
-            3'b101: csr_mtvec_s <= {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b110: csr_mtvec_s <= csr_mtvec_s | {{52{1'b0}}, ir_s[19:15], 7'b0};
-            3'b111: csr_mtvec_s <= csr_mtvec_s & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
-	    default: csr_mie_s <= regA_s;
+            3'b001: csr_mtvec_r <= regA_s;
+            3'b010: csr_mtvec_r <= csr_mtvec_r | regA_s;
+            3'b011: csr_mtvec_r <= csr_mtvec_r & ~regA_s;
+            3'b101: csr_mtvec_r <= {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b110: csr_mtvec_r <= csr_mtvec_r | {{52{1'b0}}, ir_s[19:15], 7'b0};
+            3'b111: csr_mtvec_r <= csr_mtvec_r & ~{{52{1'b0}}, ir_s[19:15], 7'b0};
+	    default: csr_mie_r <= regA_s;
           endcase
   end
   
@@ -629,25 +629,25 @@ module as_cpux (input  logic                         clk_i,
   always_ff @(posedge clk_i, posedge rst_i) 
   begin
     if(rst_i)
-      csr_mcause_s <= 64'h0;
+      csr_mcause_r <= 64'h0;
     else 
     begin
       if(trap_taken_s) 
       begin
         // Priority: Illegal > Misaligned > IRQ
         if(trap_illegal_s)
-          csr_mcause_s <= 64'd2;  // Illegal instruction
+          csr_mcause_r <= 64'd2;  // Illegal instruction
         else if(trap_misaligned_s) 
         begin
           if(dMemRd_s)
-            csr_mcause_s <= 64'd4;  // Load address misaligned
+            csr_mcause_r <= 64'd4;  // Load address misaligned
           else if(dMemWr_s)
-            csr_mcause_s <= 64'd6;  // Store address misaligned
+            csr_mcause_r <= 64'd6;  // Store address misaligned
           else
-            csr_mcause_s <= 64'd0;  // Instruction address misaligned
+            csr_mcause_r <= 64'd0;  // Instruction address misaligned
         end
         else if(irq_pending_s)
-          csr_mcause_s <= {1'b1, 63'd11};  // Machine external interrupt
+          csr_mcause_r <= {1'b1, 63'd11};  // Machine external interrupt
       end
     end
   end // always_ff @ (posedge clk_i, posedge rst_i)
@@ -660,12 +660,12 @@ module as_cpux (input  logic                         clk_i,
     csr_data_s = 64'h0;
     if( (ir_s[6:0] == 7'b1110011) && (ir_s[14:12] != 3'b000) ) // one of the CSRs and func3 != mret
       case(ir_s[31:20])                              // CSR address
-        12'h300: csr_data_s = csr_mstatus_s;
-        12'h304: csr_data_s = csr_mie_s;
-        12'h305: csr_data_s = csr_mtvec_s;
-        12'h341: csr_data_s = csr_mepc_s;
-        12'h342: csr_data_s = csr_mcause_s;
-        12'h344: csr_data_s = csr_mip_s;
+        12'h300: csr_data_s = csr_mstatus_r;
+        12'h304: csr_data_s = csr_mie_r;
+        12'h305: csr_data_s = csr_mtvec_r;
+        12'h341: csr_data_s = csr_mepc_r;
+        12'h342: csr_data_s = csr_mcause_r;
+        12'h344: csr_data_s = csr_mip_r;
         default: csr_data_s = 64'h0;
       endcase
   end

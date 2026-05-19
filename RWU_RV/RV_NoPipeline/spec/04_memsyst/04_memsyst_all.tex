@@ -684,6 +684,8 @@ The sequential logic is as follows:
     \texttt{ic\_stall\_o}; return to IDLE.
 \end{enumerate}
 
+\input{\TEXTmems 04_memsyst_icache_fsm}
+
 % -------------------------------------------------------------------------
 \subsubsection{\texttt{asDCacheCtrl} -- Data Cache Controller}
 \label{subsubsec:asDCacheCtrl}
@@ -870,6 +872,8 @@ Address decoding in the DECODE state is the critical dispatch:
     Identical in structure to \texttt{asICacheCtrl}; see
     Section~\ref{subsubsec:asICacheCtrl}.
 \end{enumerate}
+
+\input{\TEXTmems 04_memsyst_dcache_fsm}
 
 % -------------------------------------------------------------------------
 \subsubsection{\texttt{asMemArb} -- Memory Arbiter}

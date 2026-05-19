@@ -8,25 +8,25 @@ module as_br (input  logic clk_i,
               output logic br_o,
               output logic br2_o
              );
-  int cnt_s;
+  int cnt_r;
 
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i == 1)
     begin
-      cnt_s <= 0;
+      cnt_r <= 0;
     end
     else
     begin
-      if( (cnt_s >= br_cnt_max) | (start_i == 1) )
-        cnt_s <= 0;
+      if( (cnt_r >= br_cnt_max) | (start_i == 1) )
+        cnt_r <= 0;
       else
-	cnt_s <= cnt_s + 1;
+	cnt_r <= cnt_r + 1;
     end
   end // always_ff @ (posedge clk_i, posedge rst_i)
 
-  assign br_o  = (cnt_s == 0) ? 1 : 0;
-  assign br2_o = (cnt_s == br2_cnt_max) ? 1 : 0;  
+  assign br_o  = (cnt_r == 0) ? 1 : 0;
+  assign br2_o = (cnt_r == br2_cnt_max) ? 1 : 0;  
 
 endmodule : as_br
 

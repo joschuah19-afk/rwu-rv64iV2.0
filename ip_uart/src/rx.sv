@@ -16,9 +16,9 @@ module as_rx (input  logic                  clk_i,
                       bit4_st, bit5_st, bit6_st, bit7_st, stop_st} statetype_t;
   statetype_t state_s, nextstate_s;
   logic rdy_s;
-  logic [uart_width-1:0] data_s;
-  logic [1:0] delay_rdy_s;
-  logic [1:0] delay_rx_s;
+  logic [uart_width-1:0] data_r;
+  logic [1:0] delay_rdy_r;
+  logic [1:0] delay_rx_r;
   logic falling_rdy_edge_s;
   logic falling_rx_edge_s;
 
@@ -26,14 +26,14 @@ module as_rx (input  logic                  clk_i,
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i == 1)
-      delay_rx_s <= 2'b00;
+      delay_rx_r <= 2'b00;
     else
     begin
-      delay_rx_s[0] <= rx_i;
-      delay_rx_s[1] <= delay_rx_s[0];
+      delay_rx_r[0] <= rx_i;
+      delay_rx_r[1] <= delay_rx_r[0];
     end
   end
-  assign falling_rx_edge_s = delay_rx_s[1] & (~delay_rx_s[0]);
+  assign falling_rx_edge_s = delay_rx_r[1] & (~delay_rx_r[0]);
 
   
   // FSM block 1: delay
@@ -85,14 +85,14 @@ module as_rx (input  logic                  clk_i,
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i == 1)
-      delay_rdy_s <= 2'b00;
+      delay_rdy_r <= 2'b00;
     else
     begin
-      delay_rdy_s[0] <= rdy_s;
-      delay_rdy_s[1] <= delay_rdy_s[0];
+      delay_rdy_r[0] <= rdy_s;
+      delay_rdy_r[1] <= delay_rdy_r[0];
     end
   end
-  assign falling_rdy_edge_s = delay_rdy_s[1] & (~delay_rdy_s[0]);
+  assign falling_rdy_edge_s = delay_rdy_r[1] & (~delay_rdy_r[0]);
   assign rdy_o = falling_rdy_edge_s;
 
   // start br counter
@@ -102,25 +102,25 @@ module as_rx (input  logic                  clk_i,
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i == 1)
-      data_s <= {uart_width{1'b0}};
+      data_r <= {uart_width{1'b0}};
     else
     begin
       if((state_s == bit0_st) && (br2_i == 1) )
-	data_s[0] <= rx_i;
+	data_r[0] <= rx_i;
       if((state_s == bit1_st) && (br2_i == 1) )
-	data_s[1] <= rx_i;
+	data_r[1] <= rx_i;
       if((state_s == bit2_st) && (br2_i == 1) )
-	data_s[2] <= rx_i;
+	data_r[2] <= rx_i;
       if((state_s == bit3_st) && (br2_i == 1) )
-	data_s[3] <= rx_i;
+	data_r[3] <= rx_i;
       if((state_s == bit4_st) && (br2_i == 1) )
-	data_s[4] <= rx_i;
+	data_r[4] <= rx_i;
       if((state_s == bit5_st) && (br2_i == 1) )
-	data_s[5] <= rx_i;
+	data_r[5] <= rx_i;
       if((state_s == bit6_st) && (br2_i == 1) )
-	data_s[6] <= rx_i;
+	data_r[6] <= rx_i;
       if((state_s == bit7_st) && (br2_i == 1) )
-	data_s[7] <= rx_i;
+	data_r[7] <= rx_i;
     end
   end // always_ff @ (posedge clk_i, posedge rst_i)
 
@@ -131,7 +131,7 @@ module as_rx (input  logic                  clk_i,
       data_o <= {uart_width{1'b0}};
     else
       if(rdy_o == 1)
-	data_o <= data_s;
+	data_o <= data_r;
   end
   
   

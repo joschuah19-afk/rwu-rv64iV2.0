@@ -77,34 +77,3 @@ project/
 │   ├── branch.mem
 │   └── ...
 
-Speicherhierarchie:
-===================
-Die Hierarchie hat keine Zwischenebene zwischen Cache und NOR-Flash:
-
-  CPU
-   ├─ I-Cache (Controller + Tag-SRAM + Data-SRAM)  ← L1, on-chip
-   └─ D-Cache (Controller + Tag-SRAM + Data-SRAM)  ← L1, on-chip
-        ├─ Flash-Region (cacheable) → Miss → AXI4 → QSPI → NOR Flash
-        └─ Scratchpad-Region (uncacheable) → Bypass → Scratchpad SRAM
-
-  Was die I-SRAM / D-SRAM sind
-
-  Die "I-SRAM Macro" und "D-SRAM Macro" im Block-Diagramm sind die Datenspeicher des Caches selbst — also Tag-SRAM + Data-SRAM für I-Cache
-  bzw. D-Cache. Das sind keine separate Hierarchieebene, sondern die Cache-Zellen auf dem Chip.
-
-  Der Scratchpad ist kein Zwischen-Cache
-
-  Der Scratchpad SRAM ist kein L2 zwischen Cache und Flash, sondern ein direkt adressierter Bereich für R/W-Daten (Stack, Heap, .data, .bss).
-   Der D-Cache-Controller erkennt anhand der Adresse: Flash-Region → Cache-Pfad; Scratchpad-Region → Bypass direkt zum SRAM.
-
-  Falls Sie eine Zwischenebene wollen
-
-  Das wäre ein klassisches L2-Cache oder Tightly Coupled Memory (TCM)-Konzept. Das wurde gestern bewusst weggelassen, weil:
-  - Ein echter L2 erhebliche Chip-Fläche kostet (X-Fab XO035 / 350 nm)
-  - NOR-Flash via QSPI hat langen Latenz-Overhead, aber mit dem 4-beat AXI4 Burst (32 B pro Miss) amortisiert sich das
-  - Der Scratchpad übernimmt die Rolle des "schnellen R/W-Speichers"
-
-  Möchten Sie das Konzept überdenken und z.B. ein internes SRAM als L2 (read-only, für Code-Abschnitte) ergänzen?
-
-
-claude --resume 5b33cbf8-c4f7-44ff-a1d1-7d129aefdc7a

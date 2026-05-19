@@ -15,18 +15,18 @@ module as_tx (input  logic                  clk_i,
                       bit4_st, bit5_st, bit6_st, bit7_st, stop_st} statetype_t;
   statetype_t state_s, nextstate_s;
   logic rdy_s;
-  logic [uart_width-1:0] data_s;
-  logic [1:0] delay_rdy_s;
+  logic [uart_width-1:0] data_r;
+  logic [1:0] delay_rdy_r;
   logic falling_edge_s;
   
   // store data input
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i == 1)
-      data_s <= {uart_width{1'b0}};
+      data_r <= {uart_width{1'b0}};
     else
       if(start_i == 1)
-        data_s <= data_i;
+        data_r <= data_i;
   end
   
   // FSM block 1: delay
@@ -79,21 +79,21 @@ module as_tx (input  logic                  clk_i,
     else if(state_s == start_st)
       tx_o = 0;
     else if(state_s == bit0_st)
-      tx_o = data_s[0];
+      tx_o = data_r[0];
     else if(state_s == bit1_st)
-      tx_o = data_s[1];
+      tx_o = data_r[1];
     else if(state_s == bit2_st)
-      tx_o = data_s[2];
+      tx_o = data_r[2];
     else if(state_s == bit3_st)
-      tx_o = data_s[3];
+      tx_o = data_r[3];
     else if(state_s == bit4_st)
-      tx_o = data_s[4];
+      tx_o = data_r[4];
     else if(state_s == bit5_st)
-      tx_o = data_s[5];
+      tx_o = data_r[5];
     else if(state_s == bit6_st)
-      tx_o = data_s[6];
+      tx_o = data_r[6];
     else if(state_s == bit7_st)
-      tx_o = data_s[7];
+      tx_o = data_r[7];
     else
       tx_o = 1;
   end // always_comb
@@ -103,14 +103,14 @@ module as_tx (input  logic                  clk_i,
   always_ff @(posedge clk_i, posedge rst_i)
   begin
     if(rst_i == 1)
-      delay_rdy_s <= 2'b00;
+      delay_rdy_r <= 2'b00;
     else
     begin
-      delay_rdy_s[0] <= rdy_s;
-      delay_rdy_s[1] <= delay_rdy_s[0];
+      delay_rdy_r[0] <= rdy_s;
+      delay_rdy_r[1] <= delay_rdy_r[0];
     end
   end
-  assign falling_edge_s = delay_rdy_s[1] & (~delay_rdy_s[0]);
+  assign falling_edge_s = delay_rdy_r[1] & (~delay_rdy_r[0]);
   assign rdy_o = falling_edge_s;
   
 endmodule : as_tx

@@ -9,7 +9,7 @@
 // TB-spezifische Simulation-Konstrukte — in RTL nie erlaubt, in TB harmlos:
 lint_off -rule INITIALDLY   -file "*/tb/tb_rv64i_*.sv"  // <= in initial statt =
 lint_off -rule BLKSEQ       -file "*/tb/tb_rv64i_*.sv"  // = in always statt <=
-lint_off -rule PROCASSINIT  -file "*/tb/tb_rv64i_*.sv"  // proc assign auf Var mit init-Wert
+//lint_off -rule PROCASSINIT  -file "*/tb/tb_rv64i_*.sv"  // proc assign auf Var mit init-Wert
 lint_off -rule ZERODLY      -file "*/tb/tb_rv64i_*.sv"
 lint_off -rule UNUSEDPARAM  -file "*/tb/tb_rv64i_*.sv"  // TB-lokale Parameter
 

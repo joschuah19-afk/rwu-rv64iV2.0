@@ -7,6 +7,10 @@ RWU_RV/RV_NoPipeline/src : SystemVerilog sources
 RWU_RV/RV_NoPipeline/tb : SystemVerilog test benches
 RWU_RV/RV_NoPipeline/rv64Sim : Assembler files for generating the <test case>.mem files for Verilog (Vivado) simulations
 
+Assembler:
+- adapt PATH in ...RWU_RV/RV_NoPipeline/rv64Sim/CMakeLists.txt
+-   ... set(RISCV_PREFIX /usr/bin/riscv64-linux-gnu) to your needs
+
 Simulation:
 - cd RWU_RV/RV_NoPipeline
 - open a terminal
